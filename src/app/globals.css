@@ -1,0 +1,781 @@
+@import "tailwindcss";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-sans);
+  --font-mono: var(--font-mono);
+  --animate-skeleton: skeleton 2s -1s infinite linear;
+  --animate-caret-blink: 1s ease-out infinite caret-blink;
+  --animate-toast-success-odd: toast-success-odd 0.32s cubic-bezier(0.5, 1, 0.89, 1);
+  --animate-toast-success-even: toast-success-even 0.32s cubic-bezier(0.5, 1, 0.89, 1);
+  --animate-toast-error-odd: toast-error-odd 0.28s cubic-bezier(0.5, 1, 0.89, 1);
+  --animate-toast-error-even: toast-error-even 0.28s cubic-bezier(0.5, 1, 0.89, 1);
+  --font-heading: var(--font-heading);
+  --color-sidebar-ring: var(--sidebar-ring);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar: var(--sidebar);
+  --color-code-highlight: var(--code-highlight);
+  --code-foreground: var(--code-foreground);
+  --color-code: var(--code);
+  --color-chart-5: var(--chart-5);
+  --color-chart-4: var(--chart-4);
+  --color-chart-3: var(--chart-3);
+  --color-chart-2: var(--chart-2);
+  --color-chart-1: var(--chart-1);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-secondary: var(--secondary);
+  --color-ring: var(--ring);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary: var(--primary);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-popover: var(--popover);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-muted: var(--muted);
+  --color-input: var(--input);
+  --color-destructive: var(--destructive);
+  --color-card-foreground: var(--card-foreground);
+  --color-card: var(--card);
+  --color-border: var(--border);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-accent: var(--accent);
+  --color-warning-foreground: var(--warning-foreground);
+  --color-warning: var(--warning);
+  --color-success-foreground: var(--success-foreground);
+  --color-success: var(--success);
+  --color-info-foreground: var(--info-foreground);
+  --color-info: var(--info);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.4);
+  --radius-2xl: calc(var(--radius) * 1.8);
+  --radius-3xl: calc(var(--radius) * 2.2);
+  --radius-4xl: calc(var(--radius) * 2.6);
+  @keyframes skeleton {
+  to {
+    background-position: -200% 0;
+    }
+  }
+  @keyframes caret-blink {
+  0%, 70%, to {
+    opacity: 1;
+    }
+  20%, 50% {
+    opacity: 0;
+    }
+  }
+  @keyframes toast-success-odd {
+  0% {
+    scale: 1;
+    }
+  30% {
+    scale: 1.025;
+    }
+  60% {
+    scale: 0.99;
+    }
+  100% {
+    scale: 1;
+    }
+  }
+  @keyframes toast-error-odd {
+  0% {
+    translate: 0 0;
+    }
+  25% {
+    translate: -3px 0;
+    }
+  50% {
+    translate: 3px 0;
+    }
+  75% {
+    translate: -3px 0;
+    }
+  100% {
+    translate: 0 0;
+    }
+  }
+  @keyframes toast-success-even {
+  0% {
+    scale: 1;
+    }
+  30% {
+    scale: 1.025;
+    }
+  60% {
+    scale: 0.99;
+    }
+  100% {
+    scale: 1;
+    }
+  }
+  @keyframes toast-error-even {
+  0% {
+    translate: 0 0;
+    }
+  25% {
+    translate: -3px 0;
+    }
+  50% {
+    translate: 3px 0;
+    }
+  75% {
+    translate: -3px 0;
+    }
+  100% {
+    translate: 0 0;
+    }
+  }
+}
+
+:root {
+  --destructive-foreground: var(--color-red-700);
+  --info: var(--color-blue-500);
+  --info-foreground: var(--color-blue-700);
+  --success: var(--color-emerald-500);
+  --success-foreground: var(--color-emerald-700);
+  --warning: var(--color-amber-500);
+  --warning-foreground: var(--color-amber-700);
+  --accent: --alpha(var(--color-black) / 4%);
+  --accent-foreground: var(--color-neutral-800);
+  --background: var(--color-white);
+  --border: --alpha(var(--color-black) / 8%);
+  --card: var(--color-white);
+  --card-foreground: var(--color-neutral-800);
+  --destructive: var(--color-red-500);
+  --foreground: var(--color-neutral-800);
+  --input: --alpha(var(--color-black) / 10%);
+  --muted: --alpha(var(--color-black) / 4%);
+  --muted-foreground: color-mix(in srgb, var(--color-neutral-500) 90%, var(--color-black));
+  --popover: var(--color-white);
+  --popover-foreground: var(--color-neutral-800);
+  --primary: var(--color-neutral-800);
+  --primary-foreground: var(--color-neutral-50);
+  --ring: var(--color-neutral-400);
+  --secondary: --alpha(var(--color-black) / 4%);
+  --secondary-foreground: var(--color-neutral-800);
+  --chart-1: var(--color-orange-600);
+  --chart-2: var(--color-teal-600);
+  --chart-3: var(--color-cyan-900);
+  --chart-4: var(--color-amber-400);
+  --chart-5: var(--color-amber-500);
+  --code: var(--color-white);
+  --code-foreground: var(--foreground);
+  --code-highlight: --alpha(var(--color-black) / 4%);
+  --radius: 0.625rem;
+  --sidebar: var(--color-neutral-50);
+  --sidebar-accent: --alpha(var(--color-black) / 4%);
+  --sidebar-accent-foreground: var(--color-neutral-800);
+  --sidebar-border: --alpha(var(--color-black) / 6%);
+  --sidebar-foreground: color-mix(in srgb, var(--color-neutral-800) 64%, var(--sidebar));
+  --sidebar-primary: var(--color-neutral-800);
+  --sidebar-primary-foreground: var(--color-neutral-50);
+  --sidebar-ring: var(--color-neutral-400);
+}
+
+.dark {
+  --destructive-foreground: var(--color-red-400);
+  --info: var(--color-blue-500);
+  --info-foreground: var(--color-blue-400);
+  --success: var(--color-emerald-500);
+  --success-foreground: var(--color-emerald-400);
+  --warning: var(--color-amber-500);
+  --warning-foreground: var(--color-amber-400);
+  --accent: --alpha(var(--color-white) / 4%);
+  --accent-foreground: var(--color-neutral-100);
+  --background: color-mix(in srgb, var(--color-neutral-950) 95%, var(--color-white));
+  --border: --alpha(var(--color-white) / 6%);
+  --card: color-mix(in srgb, var(--background) 98%, var(--color-white));
+  --card-foreground: var(--color-neutral-100);
+  --destructive: color-mix(in srgb, var(--color-red-500) 90%, var(--color-white));
+  --foreground: var(--color-neutral-100);
+  --input: --alpha(var(--color-white) / 8%);
+  --muted: --alpha(var(--color-white) / 4%);
+  --muted-foreground: color-mix(in srgb, var(--color-neutral-500) 90%, var(--color-white));
+  --popover: color-mix(in srgb, var(--background) 98%, var(--color-white));
+  --popover-foreground: var(--color-neutral-100);
+  --primary: var(--color-neutral-100);
+  --primary-foreground: var(--color-neutral-800);
+  --ring: var(--color-neutral-500);
+  --secondary: --alpha(var(--color-white) / 4%);
+  --secondary-foreground: var(--color-neutral-100);
+  --chart-1: var(--color-blue-700);
+  --chart-2: var(--color-emerald-500);
+  --chart-3: var(--color-amber-500);
+  --chart-4: var(--color-purple-500);
+  --chart-5: var(--color-rose-500);
+  --code: color-mix(in srgb, var(--background) 98%, var(--color-white));
+  --code-foreground: var(--foreground);
+  --code-highlight: --alpha(var(--color-white) / 4%);
+  --sidebar: color-mix(in srgb, var(--color-neutral-950) 97%, var(--color-white));
+  --sidebar-accent: --alpha(var(--color-white) / 4%);
+  --sidebar-accent-foreground: var(--color-neutral-100);
+  --sidebar-border: --alpha(var(--color-white) / 5%);
+  --sidebar-foreground: color-mix(in srgb, var(--color-neutral-100) 64%, var(--sidebar));
+  --sidebar-primary: var(--color-neutral-100);
+  --sidebar-primary-foreground: var(--color-neutral-800);
+  --sidebar-ring: var(--color-neutral-400);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+  code, kbd, samp, pre {
+    font-family: var(--font-mono);
+  }
+  html {
+    @apply font-sans;
+  }
+}
+/*
+ * Fonts load from the Google Fonts CDN in layout.tsx (never self-hosted).
+ * Headings share the sans family; COSS reads all three variables.
+ */
+:root {
+  --font-sans: "Google Sans Flex", ui-sans-serif, system-ui, sans-serif;
+  --font-heading: var(--font-sans);
+  --font-mono: "Google Sans Code", ui-monospace, monospace;
+}
+
+/*
+ * Brand scales. Build UI with the primary and secondary scales instead of
+ * raw palette names, so the brand can change here in one place.
+ * Example: bg-primary-500, text-secondary-600
+ */
+@theme {
+  --color-primary-50: var(--color-indigo-50);
+  --color-primary-100: var(--color-indigo-100);
+  --color-primary-200: var(--color-indigo-200);
+  --color-primary-300: var(--color-indigo-300);
+  --color-primary-400: var(--color-indigo-400);
+  --color-primary-500: var(--color-indigo-500);
+  --color-primary-600: var(--color-indigo-600);
+  --color-primary-700: var(--color-indigo-700);
+  --color-primary-800: var(--color-indigo-800);
+  --color-primary-900: var(--color-indigo-900);
+  --color-primary-950: var(--color-indigo-950);
+  --color-secondary-50: var(--color-amber-50);
+  --color-secondary-100: var(--color-amber-100);
+  --color-secondary-200: var(--color-amber-200);
+  --color-secondary-300: var(--color-amber-300);
+  --color-secondary-400: var(--color-amber-400);
+  --color-secondary-500: var(--color-amber-500);
+  --color-secondary-600: var(--color-amber-600);
+  --color-secondary-700: var(--color-amber-700);
+  --color-secondary-800: var(--color-amber-800);
+  --color-secondary-900: var(--color-amber-900);
+  --color-secondary-950: var(--color-amber-950);
+}
+
+
+/* ---------------------------------------------------------------------------
+   Editor: paper documents and canvas boards
+   --------------------------------------------------------------------------- */
+
+:root {
+  --desk: color-mix(in srgb, var(--color-neutral-100) 70%, var(--color-white));
+  --paper: var(--color-white);
+  --paper-ink: var(--color-neutral-800);
+  --paper-rule: color-mix(in srgb, var(--color-sky-500) 22%, transparent);
+  --paper-grid: color-mix(in srgb, var(--color-neutral-500) 14%, transparent);
+  --paper-shadow: 0 1px 2px rgb(0 0 0 / 0.06), 0 4px 16px rgb(0 0 0 / 0.06);
+}
+
+.dark {
+  --desk: color-mix(in srgb, var(--color-neutral-950) 98%, var(--color-white));
+  --paper: color-mix(in srgb, var(--color-neutral-900) 92%, var(--color-white));
+  --paper-ink: var(--color-neutral-100);
+  --paper-rule: color-mix(in srgb, var(--color-sky-400) 18%, transparent);
+  --paper-grid: color-mix(in srgb, var(--color-white) 8%, transparent);
+  --paper-shadow: 0 1px 2px rgb(0 0 0 / 0.4), 0 4px 16px rgb(0 0 0 / 0.3);
+}
+
+@layer components {
+  .paper-desk {
+    background: var(--desk);
+  }
+
+  .paper {
+    position: relative;
+    color: var(--paper-ink);
+    font-size: 16px;
+  }
+
+  .paper-sheets {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+  }
+
+  .paper-sheet {
+    position: absolute;
+    inset-inline: 0;
+    background: var(--paper);
+    box-shadow: var(--paper-shadow);
+    border-radius: 3px;
+  }
+
+  .paper-pattern {
+    position: absolute;
+    inset: var(--paper-margin);
+  }
+
+  .paper[data-pattern="ruled"] .paper-pattern {
+    background-image: linear-gradient(
+      to bottom,
+      transparent calc(var(--paper-line) - 1px),
+      var(--paper-rule) calc(var(--paper-line) - 1px)
+    );
+    background-size: 100% var(--paper-line);
+  }
+
+  .paper[data-pattern="grid"] .paper-pattern {
+    background-image:
+      linear-gradient(to right, var(--paper-grid) 1px, transparent 1px),
+      linear-gradient(to bottom, var(--paper-grid) 1px, transparent 1px);
+    background-size: 20px 20px;
+  }
+
+  .paper[data-pattern="dotted"] .paper-pattern {
+    background-image: radial-gradient(
+      circle,
+      color-mix(in srgb, var(--paper-ink) 22%, transparent) 1.1px,
+      transparent 1.4px
+    );
+    background-size: 20px 20px;
+  }
+
+  .paper-header,
+  .paper-footer {
+    position: absolute;
+    inset-inline: var(--paper-margin);
+    display: flex;
+    justify-content: space-between;
+    gap: 1rem;
+    font-size: 11px;
+    line-height: 1;
+    color: var(--muted-foreground);
+  }
+
+  .paper-header {
+    top: calc(var(--paper-margin) / 2 - 0.5em);
+    justify-content: center;
+  }
+
+  .paper-footer {
+    bottom: calc(var(--paper-margin) / 2 - 0.5em);
+  }
+
+  .paper-flow {
+    position: relative;
+  }
+
+  /* ---- Prose (paper and canvas) ------------------------------------------ */
+
+  .paper-prose,
+  .canvas-prose {
+    outline: none;
+    line-height: var(--paper-line-height, 1.6);
+    overflow-wrap: break-word;
+  }
+
+  .paper-prose {
+    min-height: 12rem;
+    /* Must match BLOCK_GAP_PX in document-editor.jsx (pagination measures with it). */
+    --block-gap: 12px;
+  }
+
+  /* Pagination measures top-level blocks, so their outer spacing is uniform. */
+  .paper-prose > * {
+    margin-block: 0;
+  }
+  .paper-prose > * + * {
+    margin-top: var(--block-gap);
+  }
+  .paper-prose > .page-spacer,
+  .paper-prose > .page-spacer + * {
+    margin-top: 0 !important;
+  }
+  .page-spacer {
+    margin: 0 !important;
+    pointer-events: none;
+    user-select: none;
+  }
+
+  .paper-prose h1,
+  .paper-prose h2,
+  .paper-prose h3,
+  .paper-prose h4,
+  .canvas-prose h1,
+  .canvas-prose h2,
+  .canvas-prose h3 {
+    font-family: var(--font-heading);
+    font-weight: 600;
+    line-height: 1.25;
+    letter-spacing: -0.01em;
+  }
+  .paper-prose h1 {
+    font-size: 1.75em;
+    padding-top: 0.4em;
+  }
+  .paper-prose h2 {
+    font-size: 1.4em;
+    padding-top: 0.35em;
+  }
+  .paper-prose h3 {
+    font-size: 1.17em;
+    padding-top: 0.3em;
+  }
+  .paper-prose h4 {
+    font-size: 1em;
+    padding-top: 0.25em;
+  }
+  .canvas-prose h1 {
+    font-size: 1.5em;
+  }
+  .canvas-prose h2 {
+    font-size: 1.25em;
+  }
+  .canvas-prose h3 {
+    font-size: 1.1em;
+  }
+
+  .paper-prose ul,
+  .paper-prose ol,
+  .canvas-prose ul,
+  .canvas-prose ol {
+    padding-inline-start: 1.5em;
+  }
+  .paper-prose ul,
+  .canvas-prose ul {
+    list-style: disc;
+  }
+  .paper-prose ol,
+  .canvas-prose ol {
+    list-style: decimal;
+  }
+  .paper-prose li + li,
+  .canvas-prose li + li {
+    margin-top: 0.15em;
+  }
+  .paper-prose li > p,
+  .canvas-prose li > p {
+    margin: 0;
+  }
+
+  .paper-prose ul[data-type="taskList"],
+  .canvas-prose ul[data-type="taskList"] {
+    list-style: none;
+    padding-inline-start: 0.1em;
+  }
+  ul[data-type="taskList"] li {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.5em;
+  }
+  ul[data-type="taskList"] li > label {
+    flex: none;
+    margin-top: 0.3em;
+    user-select: none;
+  }
+  ul[data-type="taskList"] li > label input {
+    width: 1em;
+    height: 1em;
+    accent-color: var(--primary);
+    cursor: pointer;
+  }
+  ul[data-type="taskList"] li > div {
+    flex: 1;
+    min-width: 0;
+  }
+  ul[data-type="taskList"] li[data-checked="true"] > div {
+    color: var(--muted-foreground);
+    text-decoration: line-through;
+  }
+
+  .paper-prose blockquote {
+    border-inline-start: 3px solid var(--border);
+    padding-inline-start: 1em;
+    color: var(--muted-foreground);
+  }
+
+  .paper-prose code,
+  .canvas-prose code {
+    font-family: var(--font-mono);
+    font-size: 0.88em;
+    background: var(--muted);
+    border-radius: 4px;
+    padding: 0.1em 0.3em;
+  }
+  .paper-prose pre {
+    background: var(--muted);
+    border-radius: 8px;
+    padding: 0.8em 1em;
+    overflow-x: auto;
+    font-size: 0.9em;
+    line-height: 1.5;
+  }
+  .paper-prose pre code {
+    background: none;
+    padding: 0;
+    font-size: inherit;
+  }
+
+  .paper-prose a,
+  .canvas-prose a {
+    color: var(--color-primary-600);
+    text-decoration: underline;
+    text-underline-offset: 2px;
+    cursor: pointer;
+  }
+  .dark .paper-prose a,
+  .dark .canvas-prose a {
+    color: var(--color-primary-400);
+  }
+
+  .paper-prose hr {
+    border: 0;
+    border-top: 1px solid var(--border);
+    margin-block: 0.75em;
+  }
+  .paper-prose hr.ProseMirror-selectednode,
+  .paper-prose .page-break.ProseMirror-selectednode {
+    outline: 2px solid var(--ring);
+    outline-offset: 2px;
+  }
+
+  .paper-prose img {
+    max-width: 100%;
+    height: auto;
+    border-radius: 6px;
+  }
+  .paper-prose [data-resize-container] {
+    max-width: 100%;
+  }
+  .paper-prose img.ProseMirror-selectednode,
+  .paper-prose .ProseMirror-selectednode img {
+    outline: 2px solid var(--ring);
+    outline-offset: 2px;
+  }
+  .paper-prose [data-resize-handle] {
+    width: 10px;
+    height: 10px;
+    border-radius: 3px;
+    background: var(--background);
+    border: 1.5px solid var(--ring);
+    opacity: 0;
+    transition: opacity 0.15s;
+  }
+  .paper-prose [data-resize-wrapper]:hover [data-resize-handle],
+  .paper-prose .ProseMirror-selectednode [data-resize-handle] {
+    opacity: 1;
+  }
+
+  /* Tables */
+  .paper-prose .tableWrapper {
+    overflow-x: auto;
+  }
+  .paper-prose table {
+    border-collapse: collapse;
+    table-layout: fixed;
+    width: 100%;
+    margin: 0;
+  }
+  .paper-prose th,
+  .paper-prose td {
+    position: relative;
+    border: 1px solid var(--border);
+    padding: 0.35em 0.6em;
+    vertical-align: top;
+    min-width: 3em;
+  }
+  .paper-prose th {
+    background: var(--muted);
+    font-weight: 600;
+    text-align: start;
+  }
+  .paper-prose th > p,
+  .paper-prose td > p {
+    margin: 0;
+  }
+  .paper-prose .selectedCell::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: color-mix(in srgb, var(--color-sky-500) 14%, transparent);
+    pointer-events: none;
+  }
+  .paper-prose .column-resize-handle {
+    position: absolute;
+    top: 0;
+    bottom: -2px;
+    right: -2px;
+    width: 4px;
+    background: var(--color-sky-500);
+    pointer-events: none;
+  }
+  .paper-prose.resize-cursor {
+    cursor: col-resize;
+  }
+
+  /* Manual page break: a labelled rule in endless layout; the page simply ends in paged layout. */
+  .page-break {
+    position: relative;
+    height: 1.5em;
+    cursor: default;
+  }
+  .page-break::before {
+    content: "";
+    position: absolute;
+    inset-inline: 0;
+    top: 50%;
+    border-top: 1.5px dashed var(--border);
+  }
+  .page-break::after {
+    content: "Page break";
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    translate: -50% -50%;
+    padding-inline: 0.6em;
+    background: var(--paper);
+    color: var(--muted-foreground);
+    font-size: 11px;
+  }
+  .paper[data-layout="paged"] .page-break {
+    height: 0;
+    overflow: hidden;
+  }
+
+  /* Empty-block placeholder (Tiptap sets data-placeholder). */
+  .paper-prose .is-empty::before,
+  .canvas-prose .is-empty::before {
+    content: attr(data-placeholder);
+    float: left;
+    height: 0;
+    pointer-events: none;
+    color: color-mix(in srgb, var(--muted-foreground) 64%, transparent);
+  }
+
+  .drop-cursor {
+    color: var(--color-sky-500);
+  }
+
+  /* Collaborator carets */
+  .collab-caret {
+    position: relative;
+    margin-inline: -1px;
+    border-inline-start: 2px solid var(--caret-color);
+    word-break: normal;
+    pointer-events: none;
+  }
+  .collab-caret-label {
+    position: absolute;
+    top: -1.35em;
+    left: -2px;
+    padding: 0.1em 0.35em;
+    border-radius: 4px 4px 4px 0;
+    background: var(--caret-color);
+    color: white;
+    font-size: 11px;
+    font-weight: 500;
+    line-height: 1.2;
+    white-space: nowrap;
+    user-select: none;
+  }
+
+  /* ---- Canvas ------------------------------------------------------------ */
+
+  .canvas-board .react-flow {
+    --xy-background-color: var(--desk);
+    --xy-background-pattern-color: color-mix(in srgb, var(--foreground) 18%, transparent);
+    --xy-edge-stroke: color-mix(in srgb, var(--foreground) 45%, transparent);
+    --xy-edge-stroke-selected: var(--color-sky-500);
+    --xy-edge-stroke-width: 1.5;
+    --xy-connectionline-stroke: var(--color-sky-500);
+    --xy-node-boxshadow-selected: none;
+    --xy-selection-background-color: color-mix(in srgb, var(--color-sky-500) 8%, transparent);
+    --xy-selection-border: 1px solid color-mix(in srgb, var(--color-sky-500) 50%, transparent);
+    --xy-minimap-background-color: var(--popover);
+    --xy-minimap-mask-background-color: color-mix(in srgb, var(--foreground) 6%, transparent);
+    --xy-handle-background-color: var(--background);
+    --xy-handle-border-color: var(--color-sky-500);
+    --xy-edge-label-background-color: var(--popover);
+    --xy-edge-label-color: var(--foreground);
+    color: var(--foreground);
+  }
+
+  .canvas-board .react-flow__node {
+    border-radius: 8px;
+  }
+  .canvas-board .react-flow__node.selected:not(.react-flow__node-frame) {
+    outline: 2px solid var(--color-sky-500);
+    outline-offset: 2px;
+  }
+  /* Groups only catch the pointer on their label and resize handles. */
+  .canvas-board .react-flow__node-frame {
+    pointer-events: none !important;
+  }
+  .canvas-board .react-flow__node-frame .react-flow__resize-control {
+    pointer-events: auto;
+  }
+
+  /* Size comes from the box's text-size setting (FONT_SIZES in canvas-model). */
+  .canvas-prose {
+    font-size: var(--canvas-font-size, 16px);
+    --paper-line-height: 1.45;
+  }
+  /* Groups skip the node outline above; mark selection on the frame itself. */
+  .canvas-frame-selected {
+    outline: 2px solid var(--color-sky-500);
+    outline-offset: 2px;
+  }
+  .canvas-prose p + p,
+  .canvas-prose * + ul,
+  .canvas-prose * + ol {
+    margin-top: 0.35em;
+  }
+
+  .canvas-handle.react-flow__handle {
+    width: 10px;
+    height: 10px;
+    border-width: 1.5px;
+    opacity: 0;
+    transition: opacity 0.15s;
+  }
+  .react-flow__node:hover .canvas-handle,
+  .react-flow__node.selected .canvas-handle,
+  .react-flow.connecting .canvas-handle {
+    opacity: 1;
+  }
+  @media (pointer: coarse) {
+    .canvas-handle.react-flow__handle {
+      width: 16px;
+      height: 16px;
+    }
+  }
+
+  .canvas-resize-handle.react-flow__resize-control.handle {
+    width: 9px;
+    height: 9px;
+    border-radius: 2px;
+    background: var(--background);
+    border: 1.5px solid var(--color-sky-500);
+  }
+  .canvas-resize-line.react-flow__resize-control.line {
+    border-color: transparent;
+  }
+}
