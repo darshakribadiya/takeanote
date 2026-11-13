@@ -697,6 +697,21 @@
     user-select: none;
   }
 
+  /* ---- Sidebar ----------------------------------------------------------- */
+
+  /*
+   * Folders / Tags preview: the last visible row fades out to hint that
+   * more rows are hidden. Hovering or focusing it shows it in full.
+   */
+  .sidebar-fade-last {
+    mask-image: linear-gradient(to bottom, #000 15%, transparent 95%);
+    transition: mask-image 0.15s;
+  }
+  .sidebar-fade-last:hover,
+  .sidebar-fade-last:focus-within {
+    mask-image: none;
+  }
+
   /* ---- Canvas ------------------------------------------------------------ */
 
   .canvas-board .react-flow {

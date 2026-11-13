@@ -4,6 +4,7 @@ import { useEffect, useState, useSyncExternalStore } from "react";
 import * as Y from "yjs";
 import { Awareness } from "y-protocols/awareness";
 import { NoteSync } from "@/lib/sync/note-sync";
+import { registerOpenDoc } from "@/lib/sync/open-docs";
 
 const CURSOR_COLORS = ["#6366f1", "#f59e0b", "#10b981", "#ef4444", "#0ea5e9", "#d946ef", "#84cc16", "#f97316"];
 
@@ -44,8 +45,12 @@ export function useNoteSync({ noteId, kind, canEdit, isOwner, user, ensurePersis
 
   useEffect(() => {
     session.sync.start();
-    return () => session.sync.stop();
-  }, [session]);
+    const unregister = registerOpenDoc(noteId, session.doc);
+    return () => {
+      unregister();
+      session.sync.stop();
+    };
+  }, [session, noteId]);
 
   return { ...session, state };
 }

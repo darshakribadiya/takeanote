@@ -3,9 +3,9 @@
 import { createContext, use, useEffect, useMemo, useRef, useState } from "react";
 import { browser } from "react-dom";
 import { useParams } from "next/navigation";
+import { EmailSignIn } from "@/components/email-sign-in";
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
 import { toastManager } from "@/components/ui/toast";
-import { useMediaQuery } from "@/hooks/use-media-query";
 import { useHotkeys } from "@/hooks/use-hotkeys";
 import { createClient } from "@/lib/supabase/client";
 import {
@@ -20,13 +20,11 @@ import {
 } from "@/lib/notes/api";
 import { getState, setState, useStore } from "@/lib/notes/store";
 import { DEFAULT_VIEW, parseView, selectNotes } from "@/lib/notes/views";
-import { cn } from "@/lib/utils";
 import { AppSidebar } from "./app-sidebar";
 import { CommandPalette } from "./command-palette";
 import { EditorPane } from "./editor-pane";
-import { NoteList } from "./note-list";
 import { ShortcutsDialog } from "./shortcuts-dialog";
-import { SignInPanel } from "./sign-in-panel";
+import { readSidebarWidth } from "./sidebar-resize";
 
 export const WorkspaceContext = createContext(null);
 
@@ -53,7 +51,6 @@ export function Workspace() {
   use(browser("The notes workspace depends on the browser session and local drafts."));
 
   const params = useParams();
-  const isMobile = useMediaQuery("max-md");
   const [selectedId, setSelectedId] = useState(() => params?.id ?? null);
   const [view, setViewState] = useState(readStoredView);
   const [query, setQuery] = useState("");
@@ -62,6 +59,7 @@ export function Workspace() {
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const [serverSearch, setServerSearch] = useState({ query: "", ids: new Set() });
+  const [sidebarWidth, setSidebarWidth] = useState(readSidebarWidth);
   // Quick-capture text waiting for its new note's editor to pick it up.
   const initialTexts = useRef(new Map());
 
@@ -79,6 +77,11 @@ export function Workspace() {
       try {
         const user = await ensureSession();
         if (cancelled) return;
+        // Email is required: no session -> sign in; a guest from before -> add an email.
+        if (!user || user.is_anonymous) {
+          setState({ user, status: user ? "upgrade" : "signin" });
+          return;
+        }
         setState({ user });
         await loadWorkspace();
         if (cancelled) return;
@@ -99,8 +102,7 @@ export function Workspace() {
         recoverPendingNotes();
       } catch (error) {
         if (cancelled) return;
-        const anonymousDisabled = /anonymous/i.test(error?.message ?? "");
-        setState({ status: anonymousDisabled ? "signin" : "error", error: error?.message ?? "Something went wrong" });
+        setState({ status: "error", error: error?.message ?? "Something went wrong" });
       }
     }
 
@@ -197,8 +199,6 @@ export function Workspace() {
     try {
       localStorage.setItem(VIEW_KEY, nextView);
     } catch {}
-    // On phones the list and editor share the screen; show the list.
-    if (isMobile) selectNote(null);
   }
 
   function moveSelection(delta) {
@@ -209,8 +209,11 @@ export function Workspace() {
     document.getElementById(`note-item-${visibleNotes[nextIndex].id}`)?.scrollIntoView({ block: "nearest" });
   }
 
+  // The list filter lives in the sidebar; on phones (sidebar hidden) use the palette.
   function focusSearch() {
-    document.getElementById("note-search")?.focus();
+    const input = document.getElementById("note-search");
+    if (input && input.offsetParent !== null) input.focus();
+    else setPaletteOpen(true);
   }
 
   useHotkeys([
@@ -231,7 +234,6 @@ export function Workspace() {
       allowInInputs: true,
       handler: (event) => {
         if (event.target instanceof HTMLElement) event.target.blur();
-        if (isMobile && !paletteOpen) selectNote(null);
       },
     },
   ]);
@@ -254,21 +256,21 @@ export function Workspace() {
     toast: toastManager,
   };
 
-  if (status === "signin") {
+  if (status === "signin" || status === "upgrade") {
     return (
       <div className="flex min-h-dvh items-center justify-center p-4">
-        <SignInPanel />
+        {/* Reload so every loader starts from the new session. */}
+        <EmailSignIn mode={status} onSignedIn={() => location.reload()} />
       </div>
     );
   }
 
   return (
     <WorkspaceContext value={context}>
-      <SidebarProvider className="h-dvh overflow-hidden">
-        <AppSidebar />
+      <SidebarProvider className="h-dvh overflow-hidden" style={{ "--sidebar-width": `${sidebarWidth}px` }}>
+        <AppSidebar notes={visibleNotes} onWidthChange={setSidebarWidth} width={sidebarWidth} />
         <SidebarInset className="min-w-0 flex-row overflow-hidden">
-          <NoteList className={cn(selectedId && "max-md:hidden")} notes={visibleNotes} />
-          <EditorPane className={cn(!selectedId && "max-md:hidden")} />
+          <EditorPane />
         </SidebarInset>
       </SidebarProvider>
       <CommandPalette onOpenChange={setPaletteOpen} open={paletteOpen} />

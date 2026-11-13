@@ -8,7 +8,7 @@ import { useSyncExternalStore } from "react";
  */
 
 const initialState = {
-  status: "booting", // booting | ready | signin | error
+  status: "booting", // booting | ready | signin | upgrade | error
   error: null,
   user: null,
   sync: "connecting", // connecting | live

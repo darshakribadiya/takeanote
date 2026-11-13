@@ -5,6 +5,7 @@ import { browser } from "react-dom";
 import Link from "next/link";
 import { Icon } from "@iconify/react";
 import { NoteBody } from "@/components/editor/note-body";
+import { EmailSignIn } from "@/components/email-sign-in";
 import { AutosaveMenuItem, SaveControls } from "@/components/save-controls";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -33,8 +34,13 @@ export function SharedNote({ params }) {
 
     async function check() {
       try {
-        // Visitors get a silent guest session so RLS and Realtime can admit them.
+        // Visitors need an email account so RLS and Realtime can admit them.
         const user = await ensureSession();
+        if (cancelled) return;
+        if (!user || user.is_anonymous) {
+          setState({ status: user ? "upgrade" : "signin", share: null, user });
+          return;
+        }
         const share = await joinShare(token);
         if (cancelled) return;
         setState((current) => {
@@ -60,6 +66,14 @@ export function SharedNote({ params }) {
       <div className="mx-auto flex w-full max-w-3xl flex-col gap-4 px-5 py-16">
         <Skeleton className="h-9 w-1/2" />
         <Skeleton className="h-4 w-full" />
+      </div>
+    );
+  }
+
+  if (state.status === "signin" || state.status === "upgrade") {
+    return (
+      <div className="flex min-h-dvh items-center justify-center p-4">
+        <EmailSignIn mode={state.status === "signin" ? "share" : "upgrade"} onSignedIn={() => location.reload()} />
       </div>
     );
   }

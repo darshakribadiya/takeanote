@@ -1,4 +1,4 @@
-export const APP_NAME = "Quick Notes";
+export const APP_NAME = "Take a Note";
 export const APP_DESCRIPTION = "Capture, organize and share a thought in seconds.";
 
 export const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL;

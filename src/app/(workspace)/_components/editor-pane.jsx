@@ -5,6 +5,7 @@ import { Icon } from "@iconify/react";
 import { Button } from "@/components/ui/button";
 import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@/components/ui/empty";
 import { Kbd } from "@/components/ui/kbd";
+import { SidebarTrigger } from "@/components/ui/sidebar";
 import { Skeleton } from "@/components/ui/skeleton";
 import { altKey, modKey } from "@/lib/format";
 import { fetchNote } from "@/lib/notes/api";
@@ -27,7 +28,14 @@ export function EditorPane({ className }) {
   else if (selectedId) body = <MissingNote id={selectedId} key={selectedId} />;
   else body = <QuickCapture />;
 
-  return <section className={cn("flex h-full min-w-0 flex-1 flex-col", className)}>{body}</section>;
+  // An open note brings its own toolbar (with the sidebar toggle); other states need one.
+  const hasToolbar = Boolean(selectedId && note && status !== "booting" && status !== "error");
+  return (
+    <section className={cn("relative flex h-full min-w-0 flex-1 flex-col", className)}>
+      {!hasToolbar && <SidebarTrigger aria-label="Toggle sidebar" className="absolute top-3 left-3 z-10" />}
+      {body}
+    </section>
+  );
 }
 
 /*

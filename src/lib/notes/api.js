@@ -4,6 +4,7 @@ import { forgetPending, listPending, rememberPending } from "@/lib/notes/pending
 import { toBase64 } from "@/lib/sync/base64";
 import { plainText, setTextMinimal, TITLE } from "@/lib/sync/doc-model";
 import { deleteLocalDoc, loadLocalState, loadServerState } from "@/lib/sync/note-sync";
+import { getOpenDoc } from "@/lib/sync/open-docs";
 import {
   addNoteTag,
   getState,
@@ -46,17 +47,55 @@ function check({ data, error }) {
 // Session
 // ---------------------------------------------------------------------------
 
-/*
- * First visit gets an anonymous account so writing starts immediately.
- * Adding an email later upgrades the same user and keeps every note.
- */
+// The signed-in user, or null. Guest (anonymous) sign-ins are turned off.
 export async function ensureSession() {
-  const client = supabase();
-  const { data } = await client.auth.getSession();
-  if (data.session) return data.session.user;
-  const { data: signedIn, error } = await client.auth.signInAnonymously();
+  const { data } = await supabase().auth.getSession();
+  return data.session?.user ?? null;
+}
+
+/*
+ * TEMPORARY: email-only accounts with no verification, as requested for
+ * now. The password is derived from the email, so typing an email signs
+ * in (or creates the account on first use). Anyone who knows an address
+ * can open that account; replace with real verification before launch.
+ * Needs "Confirm email" off in Supabase Auth (auth.email.enable_confirmations).
+ */
+async function emailPassword(email) {
+  const bytes = new TextEncoder().encode(`quick-notes:${email}`);
+  const digest = await crypto.subtle.digest("SHA-256", bytes);
+  return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
+export function normalizeEmail(email) {
+  return email.trim().toLowerCase();
+}
+
+export async function signInWithEmail(rawEmail) {
+  const email = normalizeEmail(rawEmail);
+  const password = await emailPassword(email);
+  const auth = supabase().auth;
+  const signIn = await auth.signInWithPassword({ email, password });
+  if (!signIn.error) return signIn.data.user;
+  if (!/invalid login credentials/i.test(signIn.error.message)) throw signIn.error;
+
+  const signUp = await auth.signUp({ email, password });
+  if (signUp.error) {
+    // Made earlier with an emailed sign-in link, so it has a different (or no) password.
+    if (/already registered|already exists/i.test(signUp.error.message)) {
+      throw new Error("This email was set up with the old sign-in link and can't be opened this way yet.");
+    }
+    throw signUp.error;
+  }
+  if (!signUp.data.session) throw new Error("Email confirmation is still switched on in Supabase Auth.");
+  return signUp.data.user;
+}
+
+// A guest from before guest mode was removed keeps their notes by adding an email.
+export async function addEmailToGuest(rawEmail) {
+  const email = normalizeEmail(rawEmail);
+  const { data, error } = await supabase().auth.updateUser({ email, password: await emailPassword(email) });
   if (error) throw error;
-  return signedIn.user;
+  return data.user;
 }
 
 /*
@@ -319,7 +358,7 @@ export async function touchNote(note) {
  * its in-memory `state` so keystrokes not yet saved are included.
  */
 export async function duplicateNote(note, { state } = {}) {
-  const source = state ?? (await loadServerState(note.id, note.kind));
+  const source = state ?? (await noteState(note));
   const doc = new Y.Doc();
   Y.applyUpdate(doc, source);
   const title = doc.getText(TITLE);
@@ -339,6 +378,53 @@ export async function duplicateNote(note, { state } = {}) {
   const tagIds = getState().noteTags[note.id] ?? [];
   await Promise.all(tagIds.map((tagId) => setNoteTag(row.id, tagId, true)));
   return row.id;
+}
+
+/*
+ * Current Yjs state of any note: the live document when it is open in
+ * this tab (includes unsaved keystrokes), else the server copy.
+ */
+export async function noteState(note) {
+  const open = getOpenDoc(note.id);
+  return open ? Y.encodeStateAsUpdate(open) : loadServerState(note.id, note.kind);
+}
+
+/*
+ * Renames a note from outside its editor (sidebar). The title lives in
+ * the note's Yjs document, so the change is written as a Yjs update:
+ * through the open editor's sync when the note is open, otherwise
+ * appended to the update log with the list projection refreshed.
+ */
+export async function renameNote(note, rawTitle) {
+  const title = rawTitle.replace(/\s+/g, " ").trim().slice(0, 500);
+  const previous = getState().notes[note.id];
+  upsertNote({ id: note.id, title, _liveTitle: undefined });
+
+  const open = getOpenDoc(note.id);
+  if (open) {
+    setTextMinimal(open.getText(TITLE), title);
+    return;
+  }
+  if (note._local) throw new Error("Open the note once before renaming it.");
+
+  try {
+    const doc = new Y.Doc();
+    Y.applyUpdate(doc, await loadServerState(note.id, note.kind));
+    const updates = [];
+    doc.on("update", (update) => updates.push(update));
+    setTextMinimal(doc.getText(TITLE), title);
+    if (updates.length) await appendState(note.id, Y.mergeUpdates(updates));
+    const { error } = await supabase().rpc("update_note_text", {
+      p_note: note.id,
+      p_title: title,
+      p_content: plainText(doc, note.kind ?? "document"),
+    });
+    doc.destroy();
+    if (error) throw error;
+  } catch (error) {
+    if (previous) upsertNote(previous);
+    throw error;
+  }
 }
 
 // ---------------------------------------------------------------------------

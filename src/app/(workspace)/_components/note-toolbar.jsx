@@ -16,6 +16,7 @@ import {
   MenuSubTrigger,
   MenuTrigger,
 } from "@/components/ui/menu";
+import { SidebarTrigger } from "@/components/ui/sidebar";
 import { Toggle } from "@/components/ui/toggle";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "@/components/ui/tooltip";
 import { altKey, modKey } from "@/lib/format";
@@ -52,9 +53,7 @@ export function NoteToolbar({ note, kind, status, peers, autosave, onAutosaveCha
 
   return (
     <header className="flex h-14 shrink-0 items-center gap-1 border-b px-2 md:px-4">
-      <Button aria-label="Back to list" className="md:hidden" onClick={() => selectNote(null)} size="icon" variant="ghost">
-        <Icon icon="mdi:arrow-left" />
-      </Button>
+      <SidebarTrigger aria-label="Toggle sidebar" className="shrink-0" />
 
       <div className="flex min-w-0 flex-1 items-center gap-3 ps-1">
         {folder && (
