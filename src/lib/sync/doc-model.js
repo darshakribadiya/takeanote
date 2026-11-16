@@ -1,4 +1,5 @@
 import * as Y from "yjs";
+import { toBraille } from "@/lib/editor/secret-text";
 
 /*
  * Layout of one note's Yjs document. Both note kinds share it so
@@ -29,9 +30,10 @@ const INLINE_NODES = new Set(["hardBreak", "image", "attachment"]);
 
 function xmlText(node) {
   if (node instanceof Y.XmlText) {
+    // Hidden text (the "secret" mark) stays out of previews and the search index.
     return node
       .toDelta()
-      .map((part) => (typeof part.insert === "string" ? part.insert : ""))
+      .map((part) => (typeof part.insert !== "string" ? "" : part.attributes?.secret ? toBraille(part.insert) : part.insert))
       .join("");
   }
   if (node instanceof Y.XmlElement) {
@@ -67,7 +69,8 @@ export function plainText(doc, kind) {
 }
 
 function nodeText(doc, id) {
-  return fragmentText(doc.getXmlFragment(nodeField(id))) || doc.getMap(NODES).get(id)?.label || "";
+  const text = fragmentText(doc.getXmlFragment(nodeField(id))) || doc.getMap(NODES).get(id)?.label || "";
+  return doc.getMap(NODES).get(id)?.secret ? toBraille(text) : text;
 }
 
 /*

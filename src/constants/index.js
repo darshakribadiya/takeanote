@@ -9,3 +9,9 @@ export const AUTOSAVE_DEBOUNCE_MS = 600;
 
 // Days a deleted note stays in Trash before it can be purged.
 export const TRASH_RETENTION_DAYS = 30;
+
+// A sign-in lasts this long, then the user must sign in again.
+export const SESSION_DAYS = 30;
+export const SESSION_MAX_AGE_SECONDS = SESSION_DAYS * 24 * 60 * 60;
+
+export const MIN_PASSWORD_LENGTH = 8;

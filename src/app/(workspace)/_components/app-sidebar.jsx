@@ -80,9 +80,13 @@ function readSections() {
  * The one sidebar: create and search, views, folders, tags and the notes
  * of the current view, each with its own actions menu. Resizable on
  * desktop; a slide-over sheet on phones.
+ *
+ * The content column grows with its rows and scrolls as one (h-auto); a
+ * fixed height would squeeze the groups and let the notes list spill
+ * under Archive / Trash on short screens.
  */
 export function AppSidebar({ notes, width, onWidthChange }) {
-  const { view, setView, query, setQuery, selectedId, selectNote, newNote, openPalette, toast } = useWorkspace();
+  const { view, setView, selectedId, selectNote, newNote, openPalette, toast } = useWorkspace();
   const { isMobile, setOpenMobile } = useSidebar();
   const status = useStore((s) => s.status);
   const allNotes = useStore((s) => s.notes);
@@ -203,7 +207,7 @@ export function AppSidebar({ notes, width, onWidthChange }) {
         </Button>
       </SidebarHeader>
 
-      <SidebarContent>
+      <SidebarContent className="h-auto min-h-full">
         <SidebarGroup>
           <SidebarMenu>
             {PRIMARY_VIEWS.map((item) => (
@@ -301,7 +305,7 @@ export function AppSidebar({ notes, width, onWidthChange }) {
           )}
         />
 
-        <SidebarGroup className="min-h-0">
+        <SidebarGroup>
           <SidebarGroupLabel className="gap-2 pe-1">
             <span className="min-w-0 flex-1 truncate">{viewLabel(view, { folders: folderMap, tags: tagMap })}</span>
             {kind === "trash" && notes.length > 0 && (
@@ -314,26 +318,7 @@ export function AppSidebar({ notes, width, onWidthChange }) {
               </button>
             )}
           </SidebarGroupLabel>
-          <SidebarGroupContent className="flex flex-col gap-1">
-            <div className="relative px-0.5">
-              <Icon className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" icon="mdi:filter-variant" />
-              <SidebarInput
-                aria-label="Filter notes"
-                className="ps-8"
-                id="note-search"
-                onChange={(event) => setQuery(event.target.value)}
-                onKeyDown={(event) => {
-                  if (event.key === "Escape" && query) {
-                    event.stopPropagation();
-                    setQuery("");
-                  }
-                  if (event.key === "Enter" && notes[0]) open(notes[0].id);
-                }}
-                placeholder="Filter this list"
-                type="search"
-                value={query}
-              />
-            </div>
+          <SidebarGroupContent>
             <SidebarMenu>
               {status === "booting" ? (
                 Array.from({ length: 5 }, (_, index) => (
@@ -360,9 +345,7 @@ export function AppSidebar({ notes, width, onWidthChange }) {
                   />
                 ))
               ) : (
-                <p className="px-2 py-2 text-xs text-muted-foreground">
-                  {query ? `No notes match “${query}”.` : EMPTY_TEXT[kind]}
-                </p>
+                <p className="px-2 py-2 text-xs text-muted-foreground">{EMPTY_TEXT[kind]}</p>
               )}
             </SidebarMenu>
           </SidebarGroupContent>

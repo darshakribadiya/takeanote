@@ -5,7 +5,7 @@ import { browser } from "react-dom";
 import Link from "next/link";
 import { Icon } from "@iconify/react";
 import { NoteBody } from "@/components/editor/note-body";
-import { EmailSignIn } from "@/components/email-sign-in";
+import { AuthForm } from "@/components/auth-form";
 import { AutosaveMenuItem, SaveControls } from "@/components/save-controls";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -73,7 +73,7 @@ export function SharedNote({ params }) {
   if (state.status === "signin" || state.status === "upgrade") {
     return (
       <div className="flex min-h-dvh items-center justify-center p-4">
-        <EmailSignIn mode={state.status === "signin" ? "share" : "upgrade"} onSignedIn={() => location.reload()} />
+        <AuthForm mode={state.status === "signin" ? "share" : "upgrade"} onSignedIn={() => location.reload()} />
       </div>
     );
   }

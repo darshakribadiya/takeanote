@@ -3,7 +3,8 @@
 import { Icon } from "@iconify/react";
 import { BubbleMenu } from "@tiptap/react/menus";
 
-const ACTIONS = [
+// Shared with the right-click menu (document-context-menu.jsx).
+export const TABLE_ACTIONS = [
   { label: "Row above", icon: "mdi:table-row-plus-before", run: (c) => c.addRowBefore() },
   { label: "Row below", icon: "mdi:table-row-plus-after", run: (c) => c.addRowAfter() },
   { label: "Column left", icon: "mdi:table-column-plus-before", run: (c) => c.addColumnBefore() },
@@ -37,7 +38,7 @@ export function TableMenu({ editor }) {
       pluginKey="tableMenu"
       shouldShow={({ editor: current }) => current.isEditable && current.isActive("table")}
     >
-      {ACTIONS.map((action, index) =>
+      {TABLE_ACTIONS.map((action, index) =>
         action.divider ? (
           <span aria-hidden="true" className="mx-0.5 h-5 w-px shrink-0 bg-border" key={index} />
         ) : (

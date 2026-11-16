@@ -3,7 +3,7 @@
 import { createContext, use, useState } from "react";
 import { Icon } from "@iconify/react";
 import { Handle, NodeResizer, Position } from "@xyflow/react";
-import { boxStyle, STICKY_COLORS, textStyle, updateNodes } from "@/lib/editor/canvas-model";
+import { boxStyle, FILLS, STICKY_COLORS, textStyle, updateNodes } from "@/lib/editor/canvas-model";
 import { attachmentUrl, formatBytes } from "@/lib/notes/attachments";
 import { cn } from "@/lib/utils";
 import { CanvasText } from "./canvas-text";
@@ -54,16 +54,27 @@ export function TextNode({ id, data, selected }) {
   const { doc, readOnly } = use(CanvasContext);
   const { editing, start, stop } = useEditing(id);
   const { style } = data;
+  // A box without a fill stays see-through until it is selected or being edited.
+  const showPaper = style.fill === "none" && (selected || editing);
   return (
     <div
       className={cn("canvas-node relative h-full w-full px-3 py-2 transition-colors", !selected && !editing && "hover:brightness-97")}
       onDoubleClick={start}
-      style={{ ...boxStyle(style), ...textStyle(style) }}
+      style={{ ...boxStyle(style), ...textStyle(style), ...(showPaper ? { background: FILLS.paper.value } : {}) }}
     >
       <Resizer locked={data.locked} selected={selected} />
       <LockBadge locked={data.locked} selected={selected} />
       <Handles />
-      <CanvasText doc={doc} editing={editing} nodeId={id} onExit={stop} placeholder="Type something…" readOnly={readOnly} />
+      <CanvasText
+        autoFit={style.fontSize === "auto"}
+        doc={doc}
+        editing={editing}
+        nodeId={id}
+        onExit={stop}
+        placeholder="Type something…"
+        readOnly={readOnly}
+        secret={data.secret}
+      />
     </div>
   );
 }
@@ -83,6 +94,7 @@ export function StickyNode({ id, data, selected }) {
       <LockBadge locked={data.locked} selected={selected} />
       <Handles />
       <CanvasText
+        autoFit={style.fontSize === "auto"}
         className="text-stone-900"
         doc={doc}
         editing={editing}
@@ -90,6 +102,7 @@ export function StickyNode({ id, data, selected }) {
         onExit={stop}
         placeholder="Sticky note"
         readOnly={readOnly}
+        secret={data.secret}
       />
     </div>
   );

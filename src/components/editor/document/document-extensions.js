@@ -10,6 +10,7 @@ import { Markdown } from "@tiptap/markdown";
 import { StarterKit } from "@tiptap/starter-kit";
 import { FileDrop, Indent, PageBreak } from "@/lib/editor/extensions";
 import { Pagination } from "@/lib/editor/pagination";
+import { SecretText } from "@/lib/editor/secret-text";
 import { BODY } from "@/lib/sync/doc-model";
 import { Attachment } from "./attachment-node";
 import { SlashCommand } from "./slash-command";
@@ -54,6 +55,7 @@ export function documentExtensions({ doc, awareness, user, onFiles, actions, fie
     TextStyle,
     Color,
     BackgroundColor,
+    SecretText,
     Image.configure({
       allowBase64: false,
       resize: { enabled: true, minWidth: 80, minHeight: 40, alwaysPreserveAspectRatio: true },

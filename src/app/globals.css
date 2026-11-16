@@ -748,6 +748,31 @@
     pointer-events: auto;
   }
 
+  /*
+   * Hidden text (lib/editor/secret-text.js): Braille patterns are drawn in
+   * place of the real letters, which shrink to nothing but stay in the
+   * document. "Show hidden text" sets data-secrets-shown on <html>.
+   */
+  .secret-braille {
+    display: none;
+  }
+  :root:not([data-secrets-shown]) .secret-braille {
+    display: inline;
+    user-select: none;
+  }
+  :root:not([data-secrets-shown]) .secret-src {
+    font-size: 0;
+    letter-spacing: 0;
+  }
+  /* A whole canvas box marked hidden: swap the editor for its Braille copy. */
+  :root:not([data-secrets-shown]) .secret-box .ProseMirror {
+    display: none;
+  }
+  :root:not([data-secrets-shown]) .secret-box .secret-braille {
+    display: block;
+    overflow-wrap: anywhere;
+  }
+
   /* Size comes from the box's text-size setting (FONT_SIZES in canvas-model). */
   .canvas-prose {
     font-size: var(--canvas-font-size, 16px);
@@ -783,14 +808,53 @@
     }
   }
 
+  /*
+   * Resize grips. Corner squares are drawn at --grip-size but grab a wider
+   * --grip-hit area (::before); each edge is an invisible --edge-hit strip.
+   * Connection dots (.canvas-handle) sit above the edge strips so arrows
+   * can still start from the middle of an edge.
+   */
+  .canvas-board {
+    --grip-size: 12px;
+    --grip-hit: 24px;
+    --edge-hit: 12px;
+  }
+  @media (pointer: coarse) {
+    .canvas-board {
+      --grip-size: 16px;
+      --grip-hit: 36px;
+      --edge-hit: 20px;
+    }
+  }
   .canvas-resize-handle.react-flow__resize-control.handle {
-    width: 9px;
-    height: 9px;
-    border-radius: 2px;
+    z-index: 3;
+    width: var(--grip-size);
+    height: var(--grip-size);
+    border-radius: 3px;
     background: var(--background);
-    border: 1.5px solid var(--color-sky-500);
+    border: 2px solid var(--color-sky-500);
+  }
+  .canvas-resize-handle.react-flow__resize-control.handle::before {
+    content: "";
+    position: absolute;
+    inset: 50% auto auto 50%;
+    width: var(--grip-hit);
+    height: var(--grip-hit);
+    translate: -50% -50%;
   }
   .canvas-resize-line.react-flow__resize-control.line {
+    z-index: 1;
     border-color: transparent;
+  }
+  .canvas-resize-line.react-flow__resize-control.line.left,
+  .canvas-resize-line.react-flow__resize-control.line.right {
+    width: var(--edge-hit);
+  }
+  .canvas-resize-line.react-flow__resize-control.line.top,
+  .canvas-resize-line.react-flow__resize-control.line.bottom {
+    height: var(--edge-hit);
+  }
+  .canvas-handle.react-flow__handle {
+    z-index: 2;
   }
 }

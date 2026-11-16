@@ -11,6 +11,7 @@ import { uploadAttachment } from "@/lib/notes/attachments";
 import { NoteTitle } from "../note-title";
 import { BlockHandle } from "./block-handle";
 import { BubbleToolbar } from "./bubble-toolbar";
+import { useDocumentContextMenu } from "./document-context-menu";
 import { documentExtensions } from "./document-extensions";
 import { MobileToolbar } from "./mobile-toolbar";
 import { PaperControls, ZOOM_STEPS } from "./paper-controls";
@@ -163,6 +164,8 @@ export function DocumentEditor({
     onEditor?.(editor);
   }, [editor, onEditor]);
 
+  const contextMenu = useDocumentContextMenu({ editor, readOnly, actions: bridge, onError });
+
   // ---- layout ----------------------------------------------------------------
 
   useEffect(() => {
@@ -223,7 +226,7 @@ export function DocumentEditor({
               readOnly={readOnly}
             />
           </div>
-          <EditorContent editor={editor} />
+          <EditorContent editor={editor} onContextMenu={contextMenu.handleContextMenu} />
         </PaperView>
       </div>
 
@@ -265,6 +268,8 @@ export function DocumentEditor({
           zoom={zoom}
         />
       )}
+
+      {contextMenu.element}
 
       <input
         className="hidden"

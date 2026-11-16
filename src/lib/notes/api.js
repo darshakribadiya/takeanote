@@ -53,48 +53,61 @@ export async function ensureSession() {
   return data.session?.user ?? null;
 }
 
-/*
- * TEMPORARY: email-only accounts with no verification, as requested for
- * now. The password is derived from the email, so typing an email signs
- * in (or creates the account on first use). Anyone who knows an address
- * can open that account; replace with real verification before launch.
- * Needs "Confirm email" off in Supabase Auth (auth.email.enable_confirmations).
- */
-async function emailPassword(email) {
-  const bytes = new TextEncoder().encode(`quick-notes:${email}`);
-  const digest = await crypto.subtle.digest("SHA-256", bytes);
-  return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
-}
-
 export function normalizeEmail(email) {
   return email.trim().toLowerCase();
 }
 
-export async function signInWithEmail(rawEmail) {
-  const email = normalizeEmail(rawEmail);
-  const password = await emailPassword(email);
-  const auth = supabase().auth;
-  const signIn = await auth.signInWithPassword({ email, password });
-  if (!signIn.error) return signIn.data.user;
-  if (!/invalid login credentials/i.test(signIn.error.message)) throw signIn.error;
-
-  const signUp = await auth.signUp({ email, password });
-  if (signUp.error) {
-    // Made earlier with an emailed sign-in link, so it has a different (or no) password.
-    if (/already registered|already exists/i.test(signUp.error.message)) {
-      throw new Error("This email was set up with the old sign-in link and can't be opened this way yet.");
-    }
-    throw signUp.error;
+// Supabase's raw messages are terse; turn the common ones into plain advice.
+function authError(error) {
+  const message = error?.message ?? "";
+  if (/invalid login credentials/i.test(message)) return new Error("Wrong email or password.");
+  if (/already registered|already exists/i.test(message)) {
+    return new Error("An account with this email already exists. Sign in instead.");
   }
-  if (!signUp.data.session) throw new Error("Email confirmation is still switched on in Supabase Auth.");
-  return signUp.data.user;
+  if (/rate limit|too many/i.test(message)) return new Error("Too many attempts. Wait a minute and try again.");
+  return error;
 }
 
-// A guest from before guest mode was removed keeps their notes by adding an email.
-export async function addEmailToGuest(rawEmail) {
-  const email = normalizeEmail(rawEmail);
-  const { data, error } = await supabase().auth.updateUser({ email, password: await emailPassword(email) });
-  if (error) throw error;
+export async function signInWithPassword(rawEmail, password) {
+  const { data, error } = await supabase().auth.signInWithPassword({ email: normalizeEmail(rawEmail), password });
+  if (error) throw authError(error);
+  return data.user;
+}
+
+// Returns the new user, or null when Supabase still requires the email to be confirmed.
+export async function signUpWithPassword(rawEmail, password) {
+  const { data, error } = await supabase().auth.signUp({
+    email: normalizeEmail(rawEmail),
+    password,
+    options: { emailRedirectTo: `${location.origin}/auth/callback` },
+  });
+  if (error) throw authError(error);
+  // With email enumeration protection on, an existing email comes back as a user with no identities.
+  if (data.user && !data.user.identities?.length) throw authError({ message: "already registered" });
+  return data.session ? data.user : null;
+}
+
+/*
+ * Emails a one-time link that signs the user in on /reset-password. The
+ * reply is the same whether or not the email has an account, so the form
+ * never reveals which addresses are registered.
+ */
+export async function sendPasswordReset(rawEmail) {
+  const { error } = await supabase().auth.resetPasswordForEmail(normalizeEmail(rawEmail), {
+    redirectTo: `${location.origin}/auth/callback?next=/reset-password`,
+  });
+  if (error) throw authError(error);
+}
+
+export async function updatePassword(password) {
+  const { error } = await supabase().auth.updateUser({ password });
+  if (error) throw authError(error);
+}
+
+// A guest from before guest mode was removed keeps their notes by adding an email and password.
+export async function addEmailToGuest(rawEmail, password) {
+  const { data, error } = await supabase().auth.updateUser({ email: normalizeEmail(rawEmail), password });
+  if (error) throw authError(error);
   return data.user;
 }
 

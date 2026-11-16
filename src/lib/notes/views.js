@@ -1,4 +1,3 @@
-import { collapse, noteTitle } from "@/lib/format";
 
 /*
  * A view is a string so it can live in the URL and localStorage.
@@ -50,20 +49,10 @@ function compare(view) {
     Number(b.is_pinned) - Number(a.is_pinned) || b.content_updated_at.localeCompare(a.content_updated_at);
 }
 
-/*
- * Local search matches title and preview instantly; `serverMatches`
- * (full-text hits on note bodies) widens the result once it arrives.
- */
-export function selectNotes({ notes, noteTags, view, query, serverMatches }) {
+// The notes of one view, sorted. Searching happens in the command palette.
+export function selectNotes({ notes, noteTags, view }) {
   const parsed = parseView(view);
-  const terms = query.trim().toLowerCase().split(/\s+/).filter(Boolean);
-  const list = Object.values(notes).filter((note) => {
-    if (!belongsToView(note, parsed, noteTags)) return false;
-    if (!terms.length) return true;
-    if (serverMatches?.has(note.id)) return true;
-    const haystack = `${noteTitle(note)} ${collapse(note._liveExcerpt ?? note.excerpt ?? "")}`.toLowerCase();
-    return terms.every((term) => haystack.includes(term));
-  });
+  const list = Object.values(notes).filter((note) => belongsToView(note, parsed, noteTags));
   list.sort(compare(parsed));
   return parsed.kind === "recent" ? list.slice(0, RECENT_LIMIT) : list;
 }

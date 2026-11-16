@@ -46,6 +46,8 @@ import {
 import { isMac } from "@/lib/format";
 import { uploadAttachment } from "@/lib/notes/attachments";
 import { cn } from "@/lib/utils";
+import { usePointerMenu } from "../pointer-menu";
+import { ALIGN_ACTIONS, CanvasContextMenu } from "./canvas-context-menu";
 import { CanvasLayers } from "./canvas-layers";
 import { CanvasContext, NODE_TYPES } from "./canvas-nodes";
 import { EdgeStylePanel, NodeStylePanel } from "./canvas-style-panel";
@@ -212,11 +214,11 @@ function CanvasBoard({ noteId, doc, readOnly, ensurePersisted, onError }) {
     }
   }
 
-  function pickFiles() {
+  function pickFiles(position = centerOfView("image")) {
     const input = document.createElement("input");
     input.type = "file";
     input.multiple = true;
-    input.onchange = () => input.files?.length && addFiles([...input.files], centerOfView("image"));
+    input.onchange = () => input.files?.length && addFiles([...input.files], position);
     input.click();
   }
 
@@ -297,6 +299,38 @@ function CanvasBoard({ noteId, doc, readOnly, ensurePersisted, onError }) {
     },
   ]);
 
+  // ---- right-click menu --------------------------------------------------------
+
+  const contextMenu = usePointerMenu();
+
+  // Shift + right-click, or right-clicking text being typed, keeps the browser menu.
+  function openContextMenu(event, target) {
+    if (event.shiftKey) return;
+    contextMenu.openAt(event, target);
+  }
+
+  const board = {
+    prefs,
+    setPref,
+    empty: !nodes.length,
+    canUndo: undoManager.canUndo(),
+    canRedo: undoManager.canRedo(),
+    undo: () => undoManager.undo(),
+    redo: () => undoManager.redo(),
+    // Same offset as double-click, so the new box sits under the pointer.
+    addAt: (type, point) => create(type, point ? { x: point.x - 20, y: point.y - 20 } : undefined),
+    pickFiles: (point) => pickFiles(point),
+    editNode: (id) => setEditingId(id),
+    selectAll: () => select(nodes.filter((node) => !node.hidden).map((node) => node.id)),
+    fitView: () => flow.fitView({ padding: 0.2, duration: 200, maxZoom: 1 }),
+    resetZoom: () => flow.zoomTo(1, { duration: 150 }),
+    deleteSelection,
+    duplicateSelection,
+    groupSelection,
+    ungroupSelection,
+    toggleLock,
+  };
+
   function setPref(key, value) {
     setPrefs((current) => {
       const next = { ...current, [key]: value };
@@ -348,12 +382,30 @@ function CanvasBoard({ noteId, doc, readOnly, ensurePersisted, onError }) {
           nodesConnectable={!readOnly}
           nodesDraggable={!readOnly}
           onConnect={(connection) => addEdge(doc, connection)}
+          onEdgeContextMenu={(event, edge) => {
+            if (!edge.selected) {
+              setNodes((current) => current.map((node) => (node.selected ? { ...node, selected: false } : node)));
+              setEdges((current) => current.map((item) => ({ ...item, selected: item.id === edge.id })));
+            }
+            openContextMenu(event, { kind: "edge" });
+          }}
           onEdgesChange={handleEdgesChange}
           onMoveEnd={(_event, viewport) => {
             try {
               localStorage.setItem(viewportKey(noteId), JSON.stringify(viewport));
             } catch {}
           }}
+          onNodeContextMenu={(event, node) => {
+            if (node.id === editingId) return;
+            // Right-clicking outside the selection selects that box, like a desktop app.
+            if (!node.selected) select([node.id]);
+            openContextMenu(event, { kind: "nodes" });
+          }}
+          onPaneContextMenu={(event) => {
+            setEditingId(null);
+            openContextMenu(event, { kind: "pane", point: flow.screenToFlowPosition({ x: event.clientX, y: event.clientY }) });
+          }}
+          onSelectionContextMenu={(event) => openContextMenu(event, { kind: "nodes" })}
           onNodeClick={(_event, node) => {
             if (node.id !== editingId) setEditingId(null);
           }}
@@ -376,7 +428,10 @@ function CanvasBoard({ noteId, doc, readOnly, ensurePersisted, onError }) {
           zoomOnDoubleClick={false}
         >
           <Background gap={GRID * 2} size={1.5} variant={BackgroundVariant.Dots} />
-          {prefs.minimap && <MiniMap className="max-md:hidden!" pannable zoomable />}
+          {/* The layers panel (w-64 at right-3) takes the bottom-right corner; sit beside it. */}
+          {prefs.minimap && (
+            <MiniMap className="max-md:hidden!" pannable style={prefs.layers ? { right: "17rem" } : undefined} zoomable />
+          )}
           {!readOnly && (
             <SelectionToolbar
               doc={doc}
@@ -415,12 +470,21 @@ function CanvasBoard({ noteId, doc, readOnly, ensurePersisted, onError }) {
           />
         )}
 
+        <CanvasContextMenu
+          board={board}
+          doc={doc}
+          menu={contextMenu.menu}
+          onClose={contextMenu.close}
+          readOnly={readOnly}
+          selection={{ ids: selectedIds, nodes: selectedNodes }}
+        />
+
         <CanvasToolbar
           canRedo={undoManager.canRedo()}
           canUndo={undoManager.canUndo()}
           empty={!nodes.length}
           onAdd={create}
-          onPickFiles={pickFiles}
+          onPickFiles={() => pickFiles()}
           onRedo={() => undoManager.redo()}
           onUndo={() => undoManager.undo()}
           prefs={prefs}
@@ -562,17 +626,6 @@ function CanvasToolbar({ onAdd, onPickFiles, onUndo, onRedo, canUndo, canRedo, p
     </>
   );
 }
-
-const ALIGN_ACTIONS = [
-  { mode: "left", label: "Align left", icon: "mdi:align-horizontal-left" },
-  { mode: "center", label: "Align centers", icon: "mdi:align-horizontal-center" },
-  { mode: "right", label: "Align right", icon: "mdi:align-horizontal-right" },
-  { mode: "top", label: "Align top", icon: "mdi:align-vertical-top" },
-  { mode: "middle", label: "Align middles", icon: "mdi:align-vertical-center" },
-  { mode: "bottom", label: "Align bottom", icon: "mdi:align-vertical-bottom" },
-  { mode: "spread-x", label: "Spread horizontally", icon: "mdi:distribute-horizontal-center", min: 3 },
-  { mode: "spread-y", label: "Spread vertically", icon: "mdi:distribute-vertical-center", min: 3 },
-];
 
 function SelectionToolbar({ doc, selectedIds, selectedNodes, dragging, editingId, onDelete, onDuplicate, onGroup, onUngroup, onToggleLock }) {
   if (!selectedIds.length || dragging || editingId) return null;

@@ -44,7 +44,7 @@ export function NodeStylePanel({ doc, nodes }) {
         <Section title="Text">
           <Segments
             onPick={(fontSize) => patchNodes(doc, ids, { fontSize })}
-            options={Object.entries(FONT_SIZES).map(([value, size]) => ({ value, label: size.label, title: `${size.value}px` }))}
+            options={Object.entries(FONT_SIZES).map(([value, size]) => ({ value, label: size.label, title: size.value ? `${size.value}px` : "Fit text to the box" }))}
             value={shared((node) => node.data.style.fontSize)}
           />
           <Segments

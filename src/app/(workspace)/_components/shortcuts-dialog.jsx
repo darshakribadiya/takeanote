@@ -22,7 +22,7 @@ function shortcutGroups() {
       title: "Navigate",
       items: [
         ["Search & commands", [mod, "K"]],
-        ["Focus list search", ["/"]],
+        ["Search notes", ["/"]],
         ["Next / previous note", ["J", "K"]],
         ["Leave the editor", ["Esc"]],
         ["Toggle sidebar (outside the editor)", [mod, "B"]],

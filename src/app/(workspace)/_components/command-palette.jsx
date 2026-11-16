@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Icon } from "@iconify/react";
 import {
   Command,
@@ -18,15 +18,19 @@ import {
   CommandShortcut,
 } from "@/components/ui/command";
 import { altKey, modKey, noteTitle, notePreview } from "@/lib/format";
+import { searchNoteIds } from "@/lib/notes/api";
 import { useStore } from "@/lib/notes/store";
 import { setTheme } from "@/lib/theme";
 import { useWorkspace } from "./workspace";
 
 /*
- * One box for everything: jump to any note by title, or run an action.
- * Items are { value, label, ... } so Base UI filters on the label text.
+ * One box for everything: find a note, or run an action. Notes match on
+ * title and preview at once; full-text hits on note bodies join in once
+ * the debounced server search answers.
  */
 export function CommandPalette({ open, onOpenChange }) {
+  const [search, setSearch] = useState("");
+  const [bodyMatches, setBodyMatches] = useState({ query: "", ids: new Set() });
   const { newNote, selectNote, setView, setReadMode, openShortcuts } = useWorkspace();
   const notes = useStore((s) => s.notes);
   const folders = useStore((s) => s.folders);
@@ -78,6 +82,7 @@ export function CommandPalette({ open, onOpenChange }) {
 
     const noteItems = live.map((note) => ({
       value: `note:${note.id}`,
+      noteId: note.id,
       label: noteTitle(note),
       hint: notePreview(note),
       icon: note.archived_at ? "mdi:archive-outline" : note.kind === "canvas" ? "mdi:vector-square" : "mdi:note-text-outline",
@@ -91,15 +96,41 @@ export function CommandPalette({ open, onOpenChange }) {
     ].filter((group) => group.items.length);
   }, [notes, folders, tags, newNote, selectNote, setView, setReadMode, openShortcuts]);
 
+  useEffect(() => {
+    const trimmed = search.trim();
+    if (trimmed.length < 2) return;
+    const timer = setTimeout(async () => {
+      const ids = await searchNoteIds(trimmed);
+      setBodyMatches({ query: trimmed, ids: new Set(ids) });
+    }, 250);
+    return () => clearTimeout(timer);
+  }, [search]);
+
+  const matchedIds = bodyMatches.query === search.trim() ? bodyMatches.ids : null;
+
+  // Every typed word must appear in the label or preview; body hits always pass.
+  function filter(item, query) {
+    const terms = query.trim().toLowerCase().split(/\s+/).filter(Boolean);
+    if (!terms.length) return true;
+    if (item.noteId && matchedIds?.has(item.noteId)) return true;
+    const haystack = `${item.label} ${item.hint ?? ""}`.toLowerCase();
+    return terms.every((term) => haystack.includes(term));
+  }
+
+  function changeOpen(next) {
+    if (!next) setSearch("");
+    onOpenChange(next);
+  }
+
   function handleSelect(item) {
-    onOpenChange(false);
+    changeOpen(false);
     item.run();
   }
 
   return (
-    <CommandDialog onOpenChange={onOpenChange} open={open}>
+    <CommandDialog onOpenChange={changeOpen} open={open}>
       <CommandDialogPopup>
-        <Command itemToStringValue={(item) => item.label} items={groups}>
+        <Command filter={filter} itemToStringValue={(item) => item.label} items={groups} onValueChange={setSearch}>
           <CommandInput placeholder="Search notes or type a command…" />
           <CommandPanel>
             <CommandEmpty>No matches.</CommandEmpty>

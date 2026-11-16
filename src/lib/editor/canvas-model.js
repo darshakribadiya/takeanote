@@ -92,7 +92,9 @@ export const RADII = {
   full: { label: "Pill", value: 9999 },
 };
 
+// "auto" fits the text to the box: resize the box and the text follows.
 export const FONT_SIZES = {
+  auto: { label: "Auto", value: null },
   s: { label: "S", value: 13 },
   m: { label: "M", value: 16 },
   l: { label: "L", value: 22 },
@@ -106,9 +108,10 @@ export const TEXT_ALIGNS = {
 };
 
 // Text boxes get a visible border by default so arrows clearly land on an edge.
+// They have no fill: TextNode shows the paper background only while selected or edited.
 const NODE_STYLE_DEFAULTS = {
-  text: { border: { style: "solid", width: 1, color: "default" }, radius: "sm", fill: "paper", fontSize: "m", textAlign: "left" },
-  sticky: { border: { style: "none", width: 1, color: "default" }, radius: "sm", fontSize: "m", textAlign: "left" },
+  text: { border: { style: "solid", width: 1, color: "default" }, radius: "sm", fill: "none", fontSize: "auto", textAlign: "left" },
+  sticky: { border: { style: "none", width: 1, color: "default" }, radius: "sm", fontSize: "auto", textAlign: "left" },
   frame: { border: { style: "dashed", width: 2, color: "default" }, radius: "lg", fill: "gray" },
   image: { border: { style: "none", width: 1, color: "default" }, radius: "sm" },
   file: { border: { style: "solid", width: 1, color: "default" }, radius: "lg", fill: "paper" },
@@ -133,7 +136,7 @@ export function resolveStyle(value) {
     border: { ...defaults.border, ...value.border },
     radius: value.radius ?? defaults.radius,
     fill: value.fill ?? defaults.fill ?? "none",
-    fontSize: value.fontSize ?? defaults.fontSize ?? "m",
+    fontSize: value.fontSize ?? defaults.fontSize ?? "auto",
     textAlign: value.textAlign ?? defaults.textAlign ?? "left",
   };
 }
@@ -149,9 +152,11 @@ export function boxStyle(style) {
   };
 }
 
+// With "auto" the size is measured by CanvasText instead (fitTextToBox).
 export function textStyle(style) {
+  const size = FONT_SIZES[style.fontSize]?.value;
   return {
-    "--canvas-font-size": `${(FONT_SIZES[style.fontSize] ?? FONT_SIZES.m).value}px`,
+    ...(size ? { "--canvas-font-size": `${size}px` } : {}),
     textAlign: style.textAlign,
   };
 }
@@ -204,6 +209,7 @@ export function toFlowNode(id, value) {
       mime: value.mime,
       label: value.label,
       locked: Boolean(value.locked),
+      secret: Boolean(value.secret),
       group: value.group ?? null,
       style,
     },
@@ -580,6 +586,7 @@ const TYPE_NAMES = { text: "Text", sticky: "Sticky note", frame: "Group", image:
 export function layerName(doc, id, value) {
   if (isFrame(value)) return value.label || "Group";
   if (value.type === "image" || value.type === "file") return value.name || TYPE_NAMES[value.type];
+  if (value.secret) return "Hidden text";
   const text = fragmentText(doc.getXmlFragment(nodeField(id)))
     .split("\n")
     .map((line) => line.trim())

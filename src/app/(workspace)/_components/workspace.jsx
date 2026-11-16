@@ -3,7 +3,7 @@
 import { createContext, use, useEffect, useMemo, useRef, useState } from "react";
 import { browser } from "react-dom";
 import { useParams } from "next/navigation";
-import { EmailSignIn } from "@/components/email-sign-in";
+import { AuthForm } from "@/components/auth-form";
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
 import { toastManager } from "@/components/ui/toast";
 import { useHotkeys } from "@/hooks/use-hotkeys";
@@ -14,7 +14,6 @@ import {
   ensureSession,
   loadWorkspace,
   recoverPendingNotes,
-  searchNoteIds,
   subscribeWorkspace,
   touchNote,
 } from "@/lib/notes/api";
@@ -53,12 +52,10 @@ export function Workspace() {
   const params = useParams();
   const [selectedId, setSelectedId] = useState(() => params?.id ?? null);
   const [view, setViewState] = useState(readStoredView);
-  const [query, setQuery] = useState("");
   const [focusTarget, setFocusTarget] = useState(null);
   const [readMode, setReadMode] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
-  const [serverSearch, setServerSearch] = useState({ query: "", ids: new Set() });
   const [sidebarWidth, setSidebarWidth] = useState(readSidebarWidth);
   // Quick-capture text waiting for its new note's editor to pick it up.
   const initialTexts = useRef(new Map());
@@ -146,22 +143,7 @@ export function Workspace() {
     return () => window.removeEventListener("popstate", handlePopState);
   }, []);
 
-  // Full-text search on note bodies, debounced; titles match locally at once.
-  useEffect(() => {
-    const trimmed = query.trim();
-    if (trimmed.length < 2 || status !== "ready") return;
-    const timer = setTimeout(async () => {
-      const ids = await searchNoteIds(trimmed);
-      setServerSearch({ query: trimmed, ids: new Set(ids) });
-    }, 250);
-    return () => clearTimeout(timer);
-  }, [query, status]);
-
-  const serverMatches = serverSearch.query === query.trim() ? serverSearch.ids : null;
-  const visibleNotes = useMemo(
-    () => selectNotes({ notes, noteTags, view, query, serverMatches }),
-    [notes, noteTags, view, query, serverMatches],
-  );
+  const visibleNotes = useMemo(() => selectNotes({ notes, noteTags, view }), [notes, noteTags, view]);
 
   // ---- actions -------------------------------------------------------------
 
@@ -195,7 +177,6 @@ export function Workspace() {
 
   function changeView(nextView) {
     setViewState(nextView);
-    setQuery("");
     try {
       localStorage.setItem(VIEW_KEY, nextView);
     } catch {}
@@ -209,13 +190,6 @@ export function Workspace() {
     document.getElementById(`note-item-${visibleNotes[nextIndex].id}`)?.scrollIntoView({ block: "nearest" });
   }
 
-  // The list filter lives in the sidebar; on phones (sidebar hidden) use the palette.
-  function focusSearch() {
-    const input = document.getElementById("note-search");
-    if (input && input.offsetParent !== null) input.focus();
-    else setPaletteOpen(true);
-  }
-
   useHotkeys([
     { combo: "mod+k", handler: () => setPaletteOpen((open) => !open), allowInInputs: true },
     { combo: "alt+n", handler: () => newNote(), allowInInputs: true },
@@ -223,7 +197,7 @@ export function Workspace() {
     { combo: "n", handler: () => newNote() },
     { combo: "c", handler: () => newNote() },
     { combo: "mod+e", handler: () => setReadMode((value) => !value), allowInInputs: true },
-    { combo: "/", handler: focusSearch },
+    { combo: "/", handler: () => setPaletteOpen(true) },
     { combo: "j", handler: () => moveSelection(1) },
     { combo: "k", handler: () => moveSelection(-1) },
     { combo: "arrowdown", handler: () => moveSelection(1) },
@@ -241,8 +215,6 @@ export function Workspace() {
   const context = {
     view,
     setView: changeView,
-    query,
-    setQuery,
     selectedId,
     selectNote,
     newNote,
@@ -260,7 +232,7 @@ export function Workspace() {
     return (
       <div className="flex min-h-dvh items-center justify-center p-4">
         {/* Reload so every loader starts from the new session. */}
-        <EmailSignIn mode={status} onSignedIn={() => location.reload()} />
+        <AuthForm mode={status} onSignedIn={() => location.reload()} />
       </div>
     );
   }
