@@ -6,6 +6,8 @@ import Link from "next/link";
 import { Icon } from "@iconify/react";
 import { NoteBody } from "@/components/editor/note-body";
 import { AuthForm } from "@/components/auth-form";
+import { NameDialog } from "@/components/name-dialog";
+import { PresenceAvatars } from "@/components/presence-avatars";
 import { AutosaveMenuItem, SaveControls } from "@/components/save-controls";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -98,8 +100,11 @@ export function SharedNote({ params }) {
   return <SharedEditor key={state.share.note_id} share={state.share} user={state.user} />;
 }
 
-function SharedEditor({ share, user }) {
+function SharedEditor({ share, user: initialUser }) {
   const canEdit = share.permission === "edit";
+  // Visitors without a name are asked once, so others see who is in the note.
+  const [user, setUser] = useState(initialUser);
+  const [askName, setAskName] = useState(() => !initialUser?.user_metadata?.full_name);
   const kind = share.kind ?? "document";
   const [readMode, setReadMode] = useState(!canEdit);
   const session = useNoteSync({
@@ -145,12 +150,7 @@ function SharedEditor({ share, user }) {
         {canEdit && (
           <SaveControls autosave={autosave} onSave={save} status={state.status} />
         )}
-        {state.peers > 0 && (
-          <span className="inline-flex items-center gap-1 text-xs text-muted-foreground max-sm:hidden">
-            <Icon className="size-4" icon="mdi:account-multiple-outline" />
-            {state.peers + 1} here
-          </span>
-        )}
+        <PresenceAvatars awareness={session.awareness} />
         <div className="ms-auto flex items-center gap-1">
           {canEdit && (
             <Toggle aria-label="Read-only mode" onPressedChange={setReadMode} pressed={readMode} size="sm">
@@ -176,6 +176,15 @@ function SharedEditor({ share, user }) {
           )}
         </div>
       </header>
+
+      {askName && (
+        <NameDialog
+          intro="Add your name so others in this note can see who you are."
+          onOpenChange={setAskName}
+          onSaved={(updated) => updated && setUser(updated)}
+          open
+        />
+      )}
 
       {state.localReady && state.status !== "loading" ? (
         <NoteBody

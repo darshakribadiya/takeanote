@@ -74,12 +74,37 @@ export async function signInWithPassword(rawEmail, password) {
   return data.user;
 }
 
+export const MAX_NAME_LENGTH = 80;
+
+// Collapses spaces. Example: "  Ada   Lovelace " -> "Ada Lovelace"
+export function normalizeName(name) {
+  return (name ?? "").trim().replace(/\s+/g, " ").slice(0, MAX_NAME_LENGTH);
+}
+
+/*
+ * The name other people see for this user (shared notes, live cursors).
+ * Stored as `full_name` in the auth user's metadata; the database mirrors
+ * it into public.profiles. Falls back to the email.
+ */
+export function displayName(user) {
+  return normalizeName(user?.user_metadata?.full_name) || user?.email || "Guest";
+}
+
+export async function updateFullName(name) {
+  const { data, error } = await supabase().auth.updateUser({ data: { full_name: normalizeName(name) } });
+  if (error) throw authError(error);
+  return data.user;
+}
+
 // Returns the new user, or null when Supabase still requires the email to be confirmed.
-export async function signUpWithPassword(rawEmail, password) {
+export async function signUpWithPassword(rawEmail, password, fullName) {
   const { data, error } = await supabase().auth.signUp({
     email: normalizeEmail(rawEmail),
     password,
-    options: { emailRedirectTo: `${location.origin}/auth/callback` },
+    options: {
+      emailRedirectTo: `${location.origin}/auth/callback`,
+      data: { full_name: normalizeName(fullName) },
+    },
   });
   if (error) throw authError(error);
   // With email enumeration protection on, an existing email comes back as a user with no identities.
@@ -105,8 +130,12 @@ export async function updatePassword(password) {
 }
 
 // A guest from before guest mode was removed keeps their notes by adding an email and password.
-export async function addEmailToGuest(rawEmail, password) {
-  const { data, error } = await supabase().auth.updateUser({ email: normalizeEmail(rawEmail), password });
+export async function addEmailToGuest(rawEmail, password, fullName) {
+  const { data, error } = await supabase().auth.updateUser({
+    email: normalizeEmail(rawEmail),
+    password,
+    data: { full_name: normalizeName(fullName) },
+  });
   if (error) throw authError(error);
   return data.user;
 }
@@ -545,7 +574,26 @@ export async function listShares(noteId) {
   );
 }
 
+function isLive(share) {
+  return !share.revoked_at && (!share.expires_at || new Date(share.expires_at) > new Date());
+}
+
+// The working link that already gives this access, if any.
+export function findShare(shares, permission) {
+  return shares?.find((share) => share.permission === permission && isLive(share)) ?? null;
+}
+
+/*
+ * One link per access level: an existing working link with the same
+ * permission is returned instead of creating another one.
+ */
 export async function createShare(noteId, { permission, expiresAt }) {
+  const existing = findShare(await listShares(noteId), permission);
+  if (existing) return { share: existing, reused: true };
+  return { share: await insertShare(noteId, { permission, expiresAt }), reused: false };
+}
+
+async function insertShare(noteId, { permission, expiresAt }) {
   await ensurePersisted(noteId);
   return check(
     await supabase()
@@ -565,6 +613,18 @@ export async function joinShare(token) {
   const { data, error } = await supabase().rpc("join_share", { p_token: token });
   if (error) throw error;
   return data?.[0] ?? null;
+}
+
+/*
+ * Everyone who can open the note: the owner and, when the caller is the
+ * owner, each member who joined through a working link.
+ * Example: [{ user_id, full_name: "Ada", email: "ada@x.com", role: "edit", joined_at }]
+ */
+export async function listNotePeople(noteId) {
+  if (getState().notes[noteId]?._local) return [];
+  const { data, error } = await supabase().rpc("note_people", { p_note: noteId });
+  if (error) throw error;
+  return data ?? [];
 }
 
 export async function revokeShare(shareId) {

@@ -30,12 +30,13 @@ import {
   unarchiveNote,
 } from "@/lib/notes/api";
 import { useStore } from "@/lib/notes/store";
+import { PresenceAvatars } from "@/components/presence-avatars";
 import { SharePopover } from "./share-popover";
 import { useWorkspace } from "./workspace";
 
 const NO_FOLDER = "none";
 
-export function NoteToolbar({ note, kind, status, peers, autosave, onAutosaveChange, actions, shareOpen, onShareOpenChange, onTrash }) {
+export function NoteToolbar({ note, kind, status, awareness, autosave, onAutosaveChange, actions, shareOpen, onShareOpenChange, onTrash }) {
   const { readMode, setReadMode, selectNote, toast } = useWorkspace();
   const folders = useStore((s) => s.folders);
   const trashed = Boolean(note.deleted_at);
@@ -68,12 +69,7 @@ export function NoteToolbar({ note, kind, status, peers, autosave, onAutosaveCha
           onSave={() => run(actions.save, "Couldn't save", "Saved")}
           status={status}
         />
-        {peers > 0 && (
-          <span className="inline-flex items-center gap-1 text-xs text-muted-foreground" title="People editing now">
-            <Icon className="size-4" icon="mdi:account-multiple-outline" />
-            {peers + 1} here
-          </span>
-        )}
+        <PresenceAvatars awareness={awareness} />
       </div>
 
       {!trashed && (
@@ -95,7 +91,7 @@ export function NoteToolbar({ note, kind, status, peers, autosave, onAutosaveCha
             </Toggle>
           </ToolbarTooltip>
 
-          <SharePopover note={note} onOpenChange={onShareOpenChange} open={shareOpen} />
+          <SharePopover awareness={awareness} note={note} onOpenChange={onShareOpenChange} open={shareOpen} />
         </>
       )}
 

@@ -7,7 +7,13 @@ import { Field, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Spinner } from "@/components/ui/spinner";
 import { APP_NAME, MIN_PASSWORD_LENGTH, SESSION_DAYS } from "@/constants";
-import { addEmailToGuest, sendPasswordReset, signInWithPassword, signUpWithPassword } from "@/lib/notes/api";
+import {
+  addEmailToGuest,
+  MAX_NAME_LENGTH,
+  sendPasswordReset,
+  signInWithPassword,
+  signUpWithPassword,
+} from "@/lib/notes/api";
 
 const COPY = {
   signin: {
@@ -43,6 +49,7 @@ const COPY = {
  */
 export function AuthForm({ mode = "signin", onSignedIn }) {
   const [view, setView] = useState(mode);
+  const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
@@ -72,7 +79,7 @@ export function AuthForm({ mode = "signin", onSignedIn }) {
         return;
       }
       if (view === "signup") {
-        const user = await signUpWithPassword(email, password);
+        const user = await signUpWithPassword(email, password, fullName);
         if (!user) {
           setState("sent");
           setMessage("Almost done: open the link we emailed you to confirm your account.");
@@ -81,7 +88,7 @@ export function AuthForm({ mode = "signin", onSignedIn }) {
         onSignedIn?.(user);
         return;
       }
-      const user = view === "upgrade" ? await addEmailToGuest(email, password) : await signInWithPassword(email, password);
+      const user = view === "upgrade" ? await addEmailToGuest(email, password, fullName) : await signInWithPassword(email, password);
       onSignedIn?.(user);
     } catch (submitError) {
       setMessage(submitError?.message ?? "Something went wrong. Try again.");
@@ -106,11 +113,26 @@ export function AuthForm({ mode = "signin", onSignedIn }) {
         </div>
       </div>
 
+      {isNewPassword && (
+        <Field>
+          <FieldLabel>Full name</FieldLabel>
+          <Input
+            autoComplete="name"
+            autoFocus
+            maxLength={MAX_NAME_LENGTH}
+            onChange={(event) => setFullName(event.target.value)}
+            placeholder="Ada Lovelace"
+            required
+            value={fullName}
+          />
+        </Field>
+      )}
+
       <Field>
         <FieldLabel>Email</FieldLabel>
         <Input
           autoComplete="email"
-          autoFocus
+          autoFocus={!isNewPassword}
           onChange={(event) => setEmail(event.target.value)}
           placeholder="you@example.com"
           required

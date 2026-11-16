@@ -3,6 +3,7 @@
 import { useEffect, useState, useSyncExternalStore } from "react";
 import * as Y from "yjs";
 import { Awareness } from "y-protocols/awareness";
+import { displayName } from "@/lib/notes/api";
 import { NoteSync } from "@/lib/sync/note-sync";
 import { registerOpenDoc } from "@/lib/sync/open-docs";
 
@@ -15,6 +16,11 @@ export function colorFor(id = "") {
   return CURSOR_COLORS[Math.abs(hash) % CURSOR_COLORS.length];
 }
 
+// What collaborators see: id (to match people lists), name and cursor color.
+function awarenessUser(user) {
+  return { id: user?.id ?? null, name: displayName(user), color: colorFor(user?.id) };
+}
+
 /*
  * One Y.Doc + Awareness + NoteSync per mounted note. Remount (new `key`)
  * to open another note; options are read once.
@@ -23,10 +29,7 @@ export function useNoteSync({ noteId, kind, canEdit, isOwner, user, ensurePersis
   const [session] = useState(() => {
     const doc = new Y.Doc();
     const awareness = new Awareness(doc);
-    awareness.setLocalStateField("user", {
-      name: user?.email ?? (user?.is_anonymous === false ? "Someone" : "Guest"),
-      color: colorFor(user?.id),
-    });
+    awareness.setLocalStateField("user", awarenessUser(user));
     const sync = new NoteSync({
       noteId,
       kind,
@@ -42,6 +45,13 @@ export function useNoteSync({ noteId, kind, canEdit, isOwner, user, ensurePersis
   });
 
   const state = useSyncExternalStore(session.sync.subscribe, session.sync.getSnapshot, session.sync.getSnapshot);
+
+  // A renamed user shows the new name to everyone in the note right away.
+  const name = displayName(user);
+  useEffect(() => {
+    const current = session.awareness.getLocalState()?.user;
+    if (current && current.name !== name) session.awareness.setLocalStateField("user", { ...current, name });
+  }, [session, name]);
 
   useEffect(() => {
     session.sync.start();

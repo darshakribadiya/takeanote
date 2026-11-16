@@ -130,7 +130,7 @@ export function NoteEditor({ note }) {
         onAutosaveChange={setAutosave}
         onShareOpenChange={setShareOpen}
         onTrash={moveToTrash}
-        peers={state.peers}
+        awareness={session.awareness}
         shareOpen={shareOpen}
         status={state.status}
       />

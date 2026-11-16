@@ -2,6 +2,8 @@
 
 import { useState } from "react";
 import { Icon } from "@iconify/react";
+import { NameDialog } from "@/components/name-dialog";
+import { PersonAvatar } from "@/components/person-avatar";
 import {
   Menu,
   MenuGroup,
@@ -14,8 +16,11 @@ import {
   MenuTrigger,
 } from "@/components/ui/menu";
 import { SidebarMenu, SidebarMenuButton, SidebarMenuItem } from "@/components/ui/sidebar";
+import { displayName } from "@/lib/notes/api";
+import { setState } from "@/lib/notes/store";
 import { createClient } from "@/lib/supabase/client";
 import { useStore } from "@/lib/notes/store";
+import { colorFor } from "@/hooks/use-note-sync";
 import { getTheme, setTheme } from "@/lib/theme";
 import { cn } from "@/lib/utils";
 import { useWorkspace } from "./workspace";
@@ -26,8 +31,10 @@ export function AccountMenu() {
   const sync = useStore((s) => s.sync);
   const online = useStore((s) => s.online);
   const [theme, setThemeState] = useState(getTheme);
-  // The workspace only opens with an email account, so `user.email` is set.
-  const label = user?.email ?? "Account";
+  const [nameOpen, setNameOpen] = useState(false);
+  const fullName = user?.user_metadata?.full_name ?? "";
+  // The workspace only opens with an email account, so a label always exists.
+  const label = user ? displayName(user) : "Account";
   const syncLabel = !online ? "Offline" : sync === "live" ? "Synced" : "Connecting…";
 
   function changeTheme(value) {
@@ -41,9 +48,7 @@ export function AccountMenu() {
         <SidebarMenuItem>
           <Menu>
             <MenuTrigger render={<SidebarMenuButton className="h-auto py-2" size="lg" />}>
-              <span className="flex size-8 shrink-0 items-center justify-center rounded-full bg-primary-100 font-medium text-primary-700 dark:bg-primary-900 dark:text-primary-200">
-                {label[0].toUpperCase()}
-              </span>
+              <PersonAvatar className="size-8 ring-0" color={colorFor(user?.id)} name={label} />
               <span className="flex min-w-0 flex-1 flex-col text-left">
                 <span className="truncate text-sm font-medium">{label}</span>
                 <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
@@ -68,6 +73,10 @@ export function AccountMenu() {
                 </MenuRadioGroup>
               </MenuGroup>
               <MenuSeparator />
+              <MenuItem onClick={() => setNameOpen(true)}>
+                <Icon icon="mdi:account-edit-outline" />
+                {fullName ? "Change your name" : "Add your name"}
+              </MenuItem>
               <MenuItem onClick={openShortcuts}>
                 <Icon icon="mdi:keyboard-outline" />
                 Keyboard shortcuts
@@ -80,6 +89,14 @@ export function AccountMenu() {
           </Menu>
         </SidebarMenuItem>
       </SidebarMenu>
+      {nameOpen && (
+        <NameDialog
+          initialName={fullName}
+          onOpenChange={setNameOpen}
+          onSaved={(updated) => updated && setState({ user: updated })}
+          open
+        />
+      )}
     </>
   );
 }

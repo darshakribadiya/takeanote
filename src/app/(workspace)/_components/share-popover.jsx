@@ -2,12 +2,16 @@
 
 import { useEffect, useState } from "react";
 import { Icon } from "@iconify/react";
+import { PersonAvatar } from "@/components/person-avatar";
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverPopup, PopoverTitle, PopoverTrigger } from "@/components/ui/popover";
 import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Spinner } from "@/components/ui/spinner";
+import { colorFor } from "@/hooks/use-note-sync";
+import { usePresence } from "@/hooks/use-presence";
 import { relativeTime } from "@/lib/format";
-import { createShare, listShares, revokeShare, shareUrl } from "@/lib/notes/api";
+import { createShare, findShare, listNotePeople, listShares, revokeShare, shareUrl } from "@/lib/notes/api";
+import { useStore } from "@/lib/notes/store";
 import { useWorkspace } from "./workspace";
 
 const PERMISSIONS = [
@@ -31,9 +35,17 @@ function isExpired(share) {
   return share.expires_at && new Date(share.expires_at) < new Date();
 }
 
-export function SharePopover({ note, open, onOpenChange }) {
+const ROLE_LABELS = { owner: "Owner", edit: "Can edit", view: "Can view" };
+
+export function SharePopover({ note, open, onOpenChange, awareness }) {
   const { toast } = useWorkspace();
+  const me = useStore((s) => s.user);
   const [shares, setShares] = useState(null);
+  const [people, setPeople] = useState(null);
+  const online = usePresence(awareness);
+  const onlineIds = new Set(online.map((person) => person.id));
+  // Someone who just joined through a link shows up without reopening the popover.
+  const onlineKey = online.map((person) => person.id).sort().join(",");
   const [permission, setPermission] = useState("view");
   const [expiry, setExpiry] = useState("never");
   const [busy, setBusy] = useState(false);
@@ -53,6 +65,20 @@ export function SharePopover({ note, open, onOpenChange }) {
     };
   }, [open, note.id, toast]);
 
+  useEffect(() => {
+    if (!open) return;
+    let cancelled = false;
+    listNotePeople(note.id)
+      .then((rows) => !cancelled && setPeople(rows))
+      .catch(() => !cancelled && setPeople([]));
+    return () => {
+      cancelled = true;
+    };
+  }, [open, note.id, onlineKey]);
+
+  // One link per access level: picking an access that already has a link copies it.
+  const existing = findShare(shares, permission);
+
   async function copy(share) {
     try {
       await navigator.clipboard.writeText(shareUrl(share.token));
@@ -63,10 +89,14 @@ export function SharePopover({ note, open, onOpenChange }) {
   }
 
   async function create() {
+    if (existing) {
+      await copy(existing);
+      return;
+    }
     setBusy(true);
     try {
-      const share = await createShare(note.id, { permission, expiresAt: expiryDate(expiry) });
-      setShares((current) => [share, ...(current ?? [])]);
+      const { share, reused } = await createShare(note.id, { permission, expiresAt: expiryDate(expiry) });
+      if (!reused) setShares((current) => [share, ...(current ?? [])]);
       await copy(share);
     } catch (error) {
       toast.add({ title: "Couldn't create link", description: error.message, type: "error" });
@@ -96,7 +126,7 @@ export function SharePopover({ note, open, onOpenChange }) {
         <div className="flex flex-col gap-4">
           <div className="flex flex-col gap-1">
             <PopoverTitle className="text-base">Share this note</PopoverTitle>
-            <p className="text-sm text-muted-foreground">Anyone with the link can open it. No account needed.</p>
+            <p className="text-sm text-muted-foreground">Anyone with the link can open it after signing in.</p>
           </div>
 
           <div className="flex flex-col gap-2">
@@ -113,7 +143,7 @@ export function SharePopover({ note, open, onOpenChange }) {
                   ))}
                 </SelectPopup>
               </Select>
-              <Select items={EXPIRY} onValueChange={setExpiry} value={expiry}>
+              <Select disabled={Boolean(existing)} items={EXPIRY} onValueChange={setExpiry} value={expiry}>
                 <SelectTrigger aria-label="Expiry" className="min-w-0" size="sm">
                   <SelectValue />
                 </SelectTrigger>
@@ -126,10 +156,16 @@ export function SharePopover({ note, open, onOpenChange }) {
                 </SelectPopup>
               </Select>
             </div>
-            <Button disabled={busy} onClick={create}>
-              {busy ? <Spinner /> : <Icon icon="mdi:link-variant" />}
-              Create & copy link
+            <Button disabled={busy || shares === null} onClick={create}>
+              {busy ? <Spinner /> : <Icon icon={existing ? "mdi:content-copy" : "mdi:link-variant"} />}
+              {existing ? "Copy link" : "Create & copy link"}
             </Button>
+            {existing && (
+              <p className="text-xs text-muted-foreground">
+                A “{existing.permission === "edit" ? "Can edit" : "Can view"}” link already exists, so it is copied
+                instead of making a new one. Revoke it below to make a fresh link.
+              </p>
+            )}
           </div>
 
           {shares === null ? (
@@ -164,8 +200,50 @@ export function SharePopover({ note, open, onOpenChange }) {
               ))}
             </ul>
           ) : null}
+
+          <PeopleList me={me} onlineIds={onlineIds} people={people} />
         </div>
       </PopoverPopup>
     </Popover>
+  );
+}
+
+/*
+ * Everyone with access, people who have the note open right now first.
+ * Names come from profiles (full_name); the email is the fallback.
+ */
+function PeopleList({ people, onlineIds, me }) {
+  if (!people?.length) return null;
+  const sorted = [...people].sort(
+    (a, b) => Number(onlineIds.has(b.user_id)) - Number(onlineIds.has(a.user_id)) || a.joined_at.localeCompare(b.joined_at),
+  );
+
+  return (
+    <div className="flex flex-col gap-2 border-t pt-3">
+      <p className="text-xs font-medium text-muted-foreground">People with access</p>
+      <ul className="flex max-h-56 flex-col gap-2 overflow-y-auto">
+        {sorted.map((person) => {
+          const isMe = person.user_id === me?.id;
+          const isOnline = isMe || onlineIds.has(person.user_id);
+          const name = person.full_name || person.email || "Unknown";
+          return (
+            <li className="flex items-center gap-2" key={person.user_id}>
+              <PersonAvatar color={colorFor(person.user_id)} name={name} online={isOnline} />
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-sm">
+                  {name}
+                  {isMe && <span className="text-muted-foreground"> (you)</span>}
+                </p>
+                <p className="truncate text-xs text-muted-foreground">
+                  {isOnline ? "Here now" : person.role === "owner" ? "Owner" : `Joined ${relativeTime(person.joined_at)}`}
+                  {person.full_name && person.email ? ` · ${person.email}` : ""}
+                </p>
+              </div>
+              <span className="shrink-0 text-xs text-muted-foreground">{ROLE_LABELS[person.role] ?? person.role}</span>
+            </li>
+          );
+        })}
+      </ul>
+    </div>
   );
 }
