@@ -55,7 +55,7 @@ export function ResetPasswordForm() {
             Reset links work once and only for a short time. Request a new one from the sign-in screen.
           </p>
         </div>
-        <Button render={<Link href="/" />}>Back to sign in</Button>
+        <Button render={<Link href="/login" />}>Back to sign in</Button>
       </div>
     );
   }

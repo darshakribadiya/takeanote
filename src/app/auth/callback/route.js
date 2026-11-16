@@ -29,6 +29,7 @@ export async function GET(request) {
     error = { message: "This link is incomplete. Request a new one." };
   }
 
-  const destination = error ? `/?auth_error=${encodeURIComponent(error.message)}` : next;
+  // Signed-out visitors to "/" get the landing page, so errors show on the sign-in page.
+  const destination = error ? `/login?auth_error=${encodeURIComponent(error.message)}` : next;
   return NextResponse.redirect(new URL(destination, origin));
 }

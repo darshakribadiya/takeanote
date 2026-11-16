@@ -1,11 +1,39 @@
 import "./globals.css";
 import { AnchoredToastProvider, ToastProvider } from "@/components/ui/toast";
-import { APP_DESCRIPTION, APP_NAME } from "@/constants";
+import { APP_NAME, APP_SUMMARY, SITE_URL } from "@/constants";
 import { THEME_BOOT_SCRIPT } from "@/lib/theme";
 
+/*
+ * Site-wide SEO defaults. Pages override title / description / robots;
+ * the favicon (icon.svg, apple-icon), Open Graph image, robots.txt,
+ * sitemap.xml and manifest come from their file conventions in app/.
+ */
 export const metadata = {
-  title: { default: APP_NAME, template: `%s · ${APP_NAME}` },
-  description: APP_DESCRIPTION,
+  metadataBase: new URL(SITE_URL),
+  title: { default: `${APP_NAME}: fast notes, documents and canvas`, template: `%s · ${APP_NAME}` },
+  description: APP_SUMMARY,
+  applicationName: APP_NAME,
+  keywords: [
+    "note taking app",
+    "online notes",
+    "collaborative notes",
+    "canvas whiteboard",
+    "flowchart maker",
+    "share notes",
+    "markdown notes",
+  ],
+  authors: [{ name: APP_NAME }],
+  creator: APP_NAME,
+  category: "productivity",
+  openGraph: {
+    type: "website",
+    siteName: APP_NAME,
+    title: APP_NAME,
+    description: APP_SUMMARY,
+    locale: "en_US",
+  },
+  twitter: { card: "summary_large_image", title: APP_NAME, description: APP_SUMMARY },
+  formatDetection: { telephone: false, email: false, address: false },
 };
 
 export const viewport = {

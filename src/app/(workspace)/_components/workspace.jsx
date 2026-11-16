@@ -45,19 +45,28 @@ function noteIdFromPath(pathname) {
   return pathname.match(/^\/n\/([^/]+)/)?.[1] ?? null;
 }
 
+// Full-page views of the workspace (no note open). Example: "/notes" -> "notes"
+const PAGES = { "/notes": "notes" };
+
+function pageFromPath(pathname) {
+  return PAGES[pathname] ?? null;
+}
+
 export function Workspace() {
   // Session, drafts and shortcuts are browser-only; prerender the skeleton instead.
   use(browser("The notes workspace depends on the browser session and local drafts."));
 
   const params = useParams();
   const [selectedId, setSelectedId] = useState(() => params?.id ?? null);
+  // "notes" = the All notes overview at /notes; null = blank page or the open note.
+  const [page, setPage] = useState(() => pageFromPath(location.pathname));
   const [view, setViewState] = useState(readStoredView);
   const [focusTarget, setFocusTarget] = useState(null);
   const [readMode, setReadMode] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const [sidebarWidth, setSidebarWidth] = useState(readSidebarWidth);
-  // Quick-capture text waiting for its new note's editor to pick it up.
+  // Text typed on the blank page, waiting for its new note's editor: { title, content }.
   const initialTexts = useRef(new Map());
 
   const status = useStore((s) => s.status);
@@ -138,7 +147,10 @@ export function Workspace() {
 
   // Back/forward buttons move between opened notes.
   useEffect(() => {
-    const handlePopState = () => setSelectedId(noteIdFromPath(location.pathname));
+    const handlePopState = () => {
+      setSelectedId(noteIdFromPath(location.pathname));
+      setPage(pageFromPath(location.pathname));
+    };
     window.addEventListener("popstate", handlePopState);
     return () => window.removeEventListener("popstate", handlePopState);
   }, []);
@@ -154,6 +166,7 @@ export function Workspace() {
       initialTexts.current.delete(selectedId);
     }
     setSelectedId(id);
+    setPage(null);
     setFocusTarget(focus);
     const url = id ? `/n/${id}` : "/";
     if (location.pathname !== url) history.pushState(null, "", url);
@@ -161,18 +174,30 @@ export function Workspace() {
     if (note && !note._local) touchNote(note).catch(() => {});
   }
 
+  // The All notes overview: every note as cards or rows, at /notes.
+  function openAllNotes() {
+    if (selectedId) {
+      discardIfEmpty(selectedId);
+      initialTexts.current.delete(selectedId);
+    }
+    setSelectedId(null);
+    setPage("notes");
+    changeView(DEFAULT_VIEW);
+    if (location.pathname !== "/notes") history.pushState(null, "", "/notes");
+  }
+
   // kind: "document" (paper) or "canvas" (free-form board)
-  function newNote({ content = "", kind: noteKind = "document" } = {}) {
+  function newNote({ content = "", title = "", kind: noteKind = "document" } = {}) {
     const { kind, id } = parseView(view);
     const note = createLocalNote({
       kind: noteKind,
       folderId: kind === "folder" ? id : null,
       isFavorite: kind === "favorites",
     });
-    if (content) initialTexts.current.set(note.id, content);
+    if (content || title) initialTexts.current.set(note.id, { content, title });
     if (["archive", "trash", "recent", "tag", "shared"].includes(kind)) changeView(DEFAULT_VIEW);
     setReadMode(false);
-    selectNote(note.id, { focus: content ? "content" : noteKind === "canvas" ? null : "title" });
+    selectNote(note.id, { focus: title ? "title" : content ? "content" : noteKind === "canvas" ? null : "title" });
   }
 
   function changeView(nextView) {
@@ -217,9 +242,12 @@ export function Workspace() {
     setView: changeView,
     selectedId,
     selectNote,
+    page,
+    openAllNotes,
     newNote,
     // Read-only peek (render-safe); cleared when the note is left.
-    takeInitialText: (id) => initialTexts.current.get(id) ?? "",
+    takeInitialText: (id) => initialTexts.current.get(id)?.content ?? "",
+    takeInitialTitle: (id) => initialTexts.current.get(id)?.title ?? "",
     focusTarget,
     readMode,
     setReadMode,

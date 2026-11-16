@@ -139,3 +139,34 @@ export const FileDrop = Extension.create({
     ];
   },
 });
+
+// Lines that only make sense as markdown: "# Title", "- item", "1. step", "> quote", "```", "- [ ] task", "---"
+const MARKDOWN_LINE = /^(#{1,6}\s|[-*+]\s|\d+[.)]\s|>\s?|```|- \[[ xX]\]\s|-{3,}\s*$|\*{3,}\s*$)/m;
+
+/*
+ * Plain-text paste that looks like markdown is inserted as formatted
+ * content (needs the Markdown extension). Rich HTML pastes are left to
+ * ProseMirror, and so is ordinary text.
+ * Example: pasting "## Plan\n- milk" -> a heading and a bulleted list
+ */
+export const MarkdownPaste = Extension.create({
+  name: "markdownPaste",
+
+  addProseMirrorPlugins() {
+    const editor = this.editor;
+    return [
+      new Plugin({
+        key: new PluginKey("markdownPaste"),
+        props: {
+          handlePaste(_view, event) {
+            const data = event.clipboardData;
+            if (!editor.isEditable || !editor.markdown || !data || data.types.includes("text/html")) return false;
+            const text = data.getData("text/plain");
+            if (!text || !MARKDOWN_LINE.test(text)) return false;
+            return editor.commands.insertContent(text, { contentType: "markdown" });
+          },
+        },
+      }),
+    ];
+  },
+});

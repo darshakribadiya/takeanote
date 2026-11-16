@@ -3,7 +3,17 @@
 import { createContext, use, useState } from "react";
 import { Icon } from "@iconify/react";
 import { Handle, NodeResizer, Position } from "@xyflow/react";
-import { boxStyle, FILLS, STICKY_COLORS, textStyle, updateNodes } from "@/lib/editor/canvas-model";
+import {
+  boxStyle,
+  FILLS,
+  nodesMap,
+  SHAPES,
+  shapeStroke,
+  STICKY_COLORS,
+  STROKES,
+  textStyle,
+  updateNodes,
+} from "@/lib/editor/canvas-model";
 import { attachmentUrl, formatBytes } from "@/lib/notes/attachments";
 import { cn } from "@/lib/utils";
 import { CanvasText } from "./canvas-text";
@@ -17,7 +27,7 @@ function Handles() {
   return SIDES.map((side) => <Handle className="canvas-handle" id={side} key={side} position={side} type="source" />);
 }
 
-function Resizer({ selected, locked, keepAspectRatio, minWidth = 80, minHeight = 40 }) {
+function Resizer({ selected, locked, keepAspectRatio, minWidth = 80, minHeight = 40, onResizeStart, onResizeEnd }) {
   const { readOnly } = use(CanvasContext);
   return (
     <NodeResizer
@@ -27,6 +37,8 @@ function Resizer({ selected, locked, keepAspectRatio, minWidth = 80, minHeight =
       lineClassName="canvas-resize-line"
       minHeight={minHeight}
       minWidth={minWidth}
+      onResizeEnd={onResizeEnd}
+      onResizeStart={onResizeStart}
     />
   );
 }
@@ -51,26 +63,60 @@ function useEditing(id) {
 }
 
 export function TextNode({ id, data, selected }) {
-  const { doc, readOnly } = use(CanvasContext);
+  const { doc, readOnly, registerEditor } = use(CanvasContext);
   const { editing, start, stop } = useEditing(id);
+  const [resizing, setResizing] = useState(false);
   const { style } = data;
-  // A box without a fill stays see-through until it is selected or being edited.
-  const showPaper = style.fill === "none" && (selected || editing);
+  // Without a chosen fill or border the box is bare text; paper and a thin
+  // outline (inset, so nothing shifts) show only while selected or edited.
+  const focused = selected || editing;
+  const focusStyle = focused
+    ? {
+        ...(style.fill === "none" ? { background: FILLS.paper.value } : {}),
+        ...(style.border.style === "none" ? { boxShadow: `inset 0 0 0 1px ${STROKES.default.value}` } : {}),
+      }
+    : {};
+
+  // Typing past the edge: the box grows (wider, then taller) and the font stays.
+  function grow({ width, height }) {
+    const value = nodesMap(doc).get(id);
+    if (!value || value.locked) return;
+    updateNodes(doc, {
+      [id]: { w: value.w + Math.max(0, width), h: value.h + Math.max(0, height) },
+    });
+  }
+
+  // Dragging an edge scaled the text; keep that size.
+  function saveFontSize(px) {
+    updateNodes(doc, { [id]: { fontPx: Math.round(px) } });
+  }
+
   return (
     <div
-      className={cn("canvas-node relative h-full w-full px-3 py-2 transition-colors", !selected && !editing && "hover:brightness-97")}
+      className={cn("canvas-node relative h-full w-full px-3 py-2 transition-colors", !focused && "hover:brightness-97")}
       onDoubleClick={start}
-      style={{ ...boxStyle(style), ...textStyle(style), ...(showPaper ? { background: FILLS.paper.value } : {}) }}
+      style={{ ...boxStyle(style), ...textStyle(style), ...focusStyle }}
     >
-      <Resizer locked={data.locked} selected={selected} />
+      <Resizer
+        locked={data.locked}
+        minHeight={24}
+        minWidth={40}
+        onResizeEnd={() => setResizing(false)}
+        onResizeStart={() => setResizing(true)}
+        selected={selected}
+      />
       <LockBadge locked={data.locked} selected={selected} />
       <Handles />
       <CanvasText
-        autoFit={style.fontSize === "auto"}
         doc={doc}
         editing={editing}
         nodeId={id}
         onExit={stop}
+        measureKey={`${style.fontPx ?? style.fontSize}|${style.fontFamily}`}
+        onEditor={registerEditor ? (editor) => registerEditor(id, editor) : undefined}
+        onFontFit={saveFontSize}
+        onGrow={readOnly ? undefined : grow}
+        resizing={resizing}
         placeholder="Type something…"
         readOnly={readOnly}
         secret={data.secret}
@@ -94,15 +140,15 @@ export function StickyNode({ id, data, selected }) {
       <LockBadge locked={data.locked} selected={selected} />
       <Handles />
       <CanvasText
-        autoFit={style.fontSize === "auto"}
         className="text-stone-900"
         doc={doc}
         editing={editing}
         nodeId={id}
         onExit={stop}
-        placeholder="Sticky note"
+        placeholder="Sticky note: type # for a heading, - for a list…"
         readOnly={readOnly}
         secret={data.secret}
+        variant="document"
       />
     </div>
   );
@@ -184,4 +230,50 @@ export function FileNode({ data, selected }) {
   );
 }
 
-export const NODE_TYPES = { text: TextNode, sticky: StickyNode, frame: FrameNode, image: ImageNode, file: FileNode };
+/*
+ * Flowchart shape: the outline is an SVG path drawn at the node's real size
+ * (see SHAPES in canvas-model), filled and stroked from the node's style,
+ * with a centred, editable label kept inside the shape's text area.
+ */
+export function ShapeNode({ id, data, selected, width, height }) {
+  const { doc, readOnly, registerEditor } = use(CanvasContext);
+  const { editing, start, stop } = useEditing(id);
+  const { style } = data;
+  const shape = SHAPES[data.shape] ?? SHAPES.process;
+  const w = width ?? shape.size.w;
+  const h = height ?? shape.size.h;
+  const inset = shape.inset(w, h);
+
+  return (
+    <div className="canvas-shape relative h-full w-full" onDoubleClick={start} style={textStyle(style)}>
+      <svg aria-hidden="true" className="absolute inset-0 overflow-visible" height={h} width={w}>
+        <path d={shape.path(w, h)} fill={(FILLS[style.fill] ?? FILLS.none).value} {...shapeStroke(style)} />
+      </svg>
+      <Resizer locked={data.locked} minHeight={32} minWidth={48} selected={selected} />
+      <LockBadge locked={data.locked} selected={selected} />
+      <Handles />
+      <div className="absolute" style={{ inset: `${inset.y}px ${inset.x}px` }}>
+        <CanvasText
+          doc={doc}
+          editing={editing}
+          nodeId={id}
+          onEditor={registerEditor ? (editor) => registerEditor(id, editor) : undefined}
+          onExit={stop}
+          placeholder=""
+          readOnly={readOnly}
+          secret={data.secret}
+          variant="shape"
+        />
+      </div>
+    </div>
+  );
+}
+
+export const NODE_TYPES = {
+  text: TextNode,
+  sticky: StickyNode,
+  frame: FrameNode,
+  image: ImageNode,
+  file: FileNode,
+  shape: ShapeNode,
+};

@@ -73,3 +73,57 @@ export function countNotes(notes, view, noteTags) {
   for (const note of Object.values(notes)) if (belongsToView(note, parsed, noteTags)) count += 1;
   return count;
 }
+
+// ---------------------------------------------------------------------------
+// Date sections for the sidebar list
+// ---------------------------------------------------------------------------
+
+const DAY_MS = 86400000;
+
+// Which timestamp a view sorts by. Example: "recent" -> last_accessed_at
+export function viewDateField(kind) {
+  if (kind === "recent") return "last_accessed_at";
+  if (kind === "trash") return "deleted_at";
+  return "content_updated_at";
+}
+
+/*
+ * Splits an already-sorted list into labelled sections: pinned notes first
+ * (except in Recent and Trash, which are purely by date), then by age.
+ * Example: [pinned A, today B, March C] ->
+ *   [{ key: "pinned", label: "Pinned", notes: [A] }, { key: "today", … [B] }, { key: "older", … [C] }]
+ */
+export function groupNotesByDate(notes, kind, now = new Date()) {
+  const field = viewDateField(kind);
+  const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+  const sections = [
+    { key: "pinned", label: "Pinned", notes: [] },
+    { key: "today", label: "Today", notes: [] },
+    { key: "yesterday", label: "Yesterday", notes: [] },
+    { key: "week", label: "Previous 7 days", notes: [] },
+    { key: "month", label: "Earlier this month", notes: [] },
+    { key: "older", label: "Older", notes: [] },
+  ];
+  const byKey = Object.fromEntries(sections.map((section) => [section.key, section]));
+  const pinsFirst = kind !== "recent" && kind !== "trash";
+
+  for (const note of notes) {
+    if (pinsFirst && note.is_pinned) {
+      byKey.pinned.notes.push(note);
+      continue;
+    }
+    const time = new Date(note[field] ?? note.created_at).getTime();
+    const key =
+      time >= startOfToday
+        ? "today"
+        : time >= startOfToday - DAY_MS
+          ? "yesterday"
+          : time >= startOfToday - 7 * DAY_MS
+            ? "week"
+            : time >= new Date(now.getFullYear(), now.getMonth(), 1).getTime()
+              ? "month"
+              : "older";
+    byKey[key].notes.push(note);
+  }
+  return sections.filter((section) => section.notes.length);
+}

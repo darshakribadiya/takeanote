@@ -12,6 +12,7 @@ import {
   patchBorder,
   patchNodes,
   RADII,
+  SHAPES,
   STICKY_COLORS,
   STROKES,
   STYLE_CAPABILITIES,
@@ -40,11 +41,21 @@ export function NodeStylePanel({ doc, nodes }) {
 
   return (
     <div className="flex w-72 flex-col gap-3 p-1">
+      {can("shape") && (
+        <Section title="Shape">
+          <Segments
+            onPick={(shape) => patchNodes(doc, ids, { shape })}
+            options={Object.entries(SHAPES).map(([value, shape]) => ({ value, icon: shape.icon, title: shape.label }))}
+            value={shared((node) => node.data.shape)}
+          />
+        </Section>
+      )}
+
       {can("text") && (
         <Section title="Text">
           <Segments
-            onPick={(fontSize) => patchNodes(doc, ids, { fontSize })}
-            options={Object.entries(FONT_SIZES).map(([value, size]) => ({ value, label: size.label, title: size.value ? `${size.value}px` : "Fit text to the box" }))}
+            onPick={(fontSize) => patchNodes(doc, ids, { fontSize, fontPx: null })}
+            options={Object.entries(FONT_SIZES).map(([value, size]) => ({ value, label: size.label, title: `${size.value}px` }))}
             value={shared((node) => node.data.style.fontSize)}
           />
           <Segments
@@ -186,7 +197,7 @@ function Section({ title, children }) {
 
 function Segments({ options, value, onPick }) {
   return (
-    <div className="flex items-center gap-0.5 rounded-lg bg-muted p-0.5">
+    <div className="flex flex-wrap items-center gap-0.5 rounded-lg bg-muted p-0.5">
       {options.map((option) => (
         <button
           aria-label={option.title ?? option.label}

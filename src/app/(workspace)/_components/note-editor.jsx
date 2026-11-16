@@ -1,8 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Icon } from "@iconify/react";
 import * as Y from "yjs";
+import { BlankPaper } from "@/components/editor/document/blank-paper";
 import { NoteBody } from "@/components/editor/note-body";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -22,17 +23,18 @@ import {
   unarchiveNote,
 } from "@/lib/notes/api";
 import { getState, upsertNote, useStore } from "@/lib/notes/store";
-import { displayTitle, isEmptyDoc, plainText, TITLE } from "@/lib/sync/doc-model";
+import { displayTitle, isEmptyDoc, plainText, setTextMinimal, TITLE } from "@/lib/sync/doc-model";
 import { NoteToolbar } from "./note-toolbar";
 import { TagPicker } from "./tag-picker";
 import { useWorkspace } from "./workspace";
 
 export function NoteEditor({ note }) {
-  const { focusTarget, readMode, selectNote, toast, takeInitialText } = useWorkspace();
+  const { focusTarget, readMode, selectNote, toast, takeInitialText, takeInitialTitle } = useWorkspace();
   const user = useStore((s) => s.user);
   const [shareOpen, setShareOpen] = useState(false);
   const [editor, setEditor] = useState(null);
   const [initialText] = useState(() => takeInitialText(note.id));
+  const [initialTitle] = useState(() => takeInitialTitle(note.id));
   const trashed = Boolean(note.deleted_at);
   const readOnly = readMode || trashed;
   const kind = note.kind ?? "document";
@@ -49,6 +51,11 @@ export function NoteEditor({ note }) {
     onLocalText: ({ title, text }) => upsertNote({ id: note.id, _liveTitle: title, _liveExcerpt: makeExcerpt(text) }),
   });
   const { doc, sync, state } = session;
+
+  // A title typed on the blank page carries over into the new note.
+  useEffect(() => {
+    if (initialTitle && !doc.getText(TITLE).length) setTextMinimal(doc.getText(TITLE), initialTitle);
+  }, [doc, initialTitle]);
   const [paper] = usePaper(doc);
   const [autosave, setAutosave] = useAutosave(session);
   const awarenessUser = session.awareness.getLocalState()?.user;
@@ -174,6 +181,8 @@ export function NoteEditor({ note }) {
           session={session}
           user={awarenessUser}
         />
+      ) : kind === "document" ? (
+        <BlankPaper />
       ) : (
         <BodySkeleton />
       )}

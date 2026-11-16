@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { Icon } from "@iconify/react";
+import { LogoMark } from "@/components/logo";
 import { Button } from "@/components/ui/button";
 import { Field, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
@@ -99,14 +100,13 @@ export function AuthForm({ mode = "signin", onSignedIn }) {
   return (
     <form className="flex w-full max-w-sm flex-col gap-4" onSubmit={submit}>
       <div className="flex flex-col items-center gap-3 text-center">
-        <span className="flex size-10 items-center justify-center rounded-xl bg-primary-600 text-white">
-          <Icon
-            className="size-5"
-            icon={
-              view === "forgot" ? "mdi:lock-reset" : mode === "share" ? "mdi:link-variant" : "mdi:lightning-bolt-outline"
-            }
-          />
-        </span>
+        {view === "forgot" || mode === "share" ? (
+          <span className="flex size-10 items-center justify-center rounded-xl bg-primary-600 text-white">
+            <Icon className="size-5" icon={view === "forgot" ? "mdi:lock-reset" : "mdi:link-variant"} />
+          </span>
+        ) : (
+          <LogoMark size={40} />
+        )}
         <div className="flex flex-col gap-1">
           <h1 className="font-heading text-xl font-semibold">{copy.title}</h1>
           <p className="text-sm text-muted-foreground">{copy.text}</p>

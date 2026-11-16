@@ -1,5 +1,11 @@
 export const APP_NAME = "Take a Note";
 export const APP_DESCRIPTION = "Capture, organize and share a thought in seconds.";
+// Longer pitch for search results and link previews.
+export const APP_SUMMARY =
+  "Take a Note is a fast, free note-taking app: write documents on real paper sizes, sketch flowcharts on a canvas, and share notes by link or email with live collaboration.";
+
+// Public address of the site, for canonical URLs, sitemaps and share links.
+export const SITE_URL = (process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3005").replace(/\/$/, "");
 
 export const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL;
 export const SUPABASE_PUBLISHABLE_KEY = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;

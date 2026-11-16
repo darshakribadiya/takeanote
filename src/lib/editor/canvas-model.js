@@ -6,10 +6,13 @@ import { EDGES, fragmentText, nodeField, NODES } from "@/lib/sync/doc-model";
  *   nodes: id -> {
  *     type, x, y, w, h, z,
  *     color?            sticky colour key (STICKY_COLORS)
+ *     shape?            flowchart shape key (SHAPES), for type "shape"
  *     fill?             background key (FILLS)
  *     border?           { style, width, color }   (BORDER_STYLES, STROKES)
  *     radius?           corner key (RADII)
  *     fontSize?         FONT_SIZES key
+ *     fontPx?           text boxes: exact size set by dragging an edge (wins over fontSize)
+ *     fontFamily?       FONT_FAMILIES key
  *     textAlign?        left | center | right
  *     group?            id of the frame this node belongs to
  *     locked?, hidden?  layer flags
@@ -33,9 +36,11 @@ const GROUP_PADDING = GRID * 2;
 const FRAME_Z_OFFSET = -10000;
 
 export const NODE_DEFAULTS = {
-  text: { w: 240, h: 80 },
+  // Text boxes start one line tall and grow as you type.
+  text: { w: 160, h: 40 },
   sticky: { w: 200, h: 200, color: "yellow" },
   frame: { w: 480, h: 320, label: "Group" },
+  shape: { w: 160, h: 80, shape: "process" },
   image: { w: 320, h: 240 },
   file: { w: 260, h: 72 },
 };
@@ -92,13 +97,24 @@ export const RADII = {
   full: { label: "Pill", value: 9999 },
 };
 
-// "auto" fits the text to the box: resize the box and the text follows.
+// Preset text sizes. Dragging a text box's edge sets an exact size (fontPx) instead.
 export const FONT_SIZES = {
-  auto: { label: "Auto", value: null },
   s: { label: "S", value: 13 },
   m: { label: "M", value: 16 },
   l: { label: "L", value: 22 },
   xl: { label: "XL", value: 32 },
+};
+
+// System font stacks, so no extra font files load for the canvas.
+export const FONT_FAMILIES = {
+  sans: { label: "Sans", icon: "mdi:format-font", value: "var(--font-sans)" },
+  serif: { label: "Serif", icon: "mdi:format-text-variant-outline", value: 'ui-serif, Georgia, "Times New Roman", serif' },
+  mono: { label: "Mono", icon: "mdi:code-tags", value: "var(--font-mono)" },
+  hand: {
+    label: "Handwritten",
+    icon: "mdi:draw",
+    value: '"Segoe Print", "Bradley Hand", "Chalkboard SE", "Comic Sans MS", cursive',
+  },
 };
 
 export const TEXT_ALIGNS = {
@@ -107,12 +123,13 @@ export const TEXT_ALIGNS = {
   right: { label: "Align right", icon: "mdi:format-align-right" },
 };
 
-// Text boxes get a visible border by default so arrows clearly land on an edge.
-// They have no fill: TextNode shows the paper background only while selected or edited.
+// Text boxes have no border or fill by default: TextNode shows paper and a
+// thin outline only while the box is selected or being edited.
 const NODE_STYLE_DEFAULTS = {
-  text: { border: { style: "solid", width: 1, color: "default" }, radius: "sm", fill: "none", fontSize: "auto", textAlign: "left" },
-  sticky: { border: { style: "none", width: 1, color: "default" }, radius: "sm", fontSize: "auto", textAlign: "left" },
+  text: { border: { style: "none", width: 1, color: "default" }, radius: "sm", fill: "none", fontSize: "m", textAlign: "left" },
+  sticky: { border: { style: "none", width: 1, color: "default" }, radius: "sm", fontSize: "m", textAlign: "left" },
   frame: { border: { style: "dashed", width: 2, color: "default" }, radius: "lg", fill: "gray" },
+  shape: { border: { style: "solid", width: 2, color: "strong" }, radius: "sm", fill: "paper", fontSize: "m", textAlign: "center" },
   image: { border: { style: "none", width: 1, color: "default" }, radius: "sm" },
   file: { border: { style: "solid", width: 1, color: "default" }, radius: "lg", fill: "paper" },
 };
@@ -122,6 +139,7 @@ export const STYLE_CAPABILITIES = {
   text: { border: true, fill: true, radius: true, text: true },
   sticky: { border: true, sticky: true, radius: true, text: true },
   frame: { border: true, fill: true, radius: true },
+  shape: { border: true, fill: true, text: true, shape: true },
   image: { border: true, radius: true },
   file: { border: true, fill: true, radius: true },
 };
@@ -136,7 +154,11 @@ export function resolveStyle(value) {
     border: { ...defaults.border, ...value.border },
     radius: value.radius ?? defaults.radius,
     fill: value.fill ?? defaults.fill ?? "none",
-    fontSize: value.fontSize ?? defaults.fontSize ?? "auto",
+    // "custom" = a size set by resizing (no preset highlighted). Boards from the
+    // short-lived "auto" option fall back to M.
+    fontSize: value.fontPx ? "custom" : FONT_SIZES[value.fontSize] ? value.fontSize : (defaults.fontSize ?? "m"),
+    fontPx: value.fontPx ?? null,
+    fontFamily: FONT_FAMILIES[value.fontFamily] ? value.fontFamily : "sans",
     textAlign: value.textAlign ?? defaults.textAlign ?? "left",
   };
 }
@@ -152,11 +174,12 @@ export function boxStyle(style) {
   };
 }
 
-// With "auto" the size is measured by CanvasText instead (fitTextToBox).
+// Example: { fontSize: "l" } -> { "--canvas-font-size": "22px" }; { fontPx: 37 } -> "37px"
 export function textStyle(style) {
-  const size = FONT_SIZES[style.fontSize]?.value;
+  const size = style.fontPx ?? FONT_SIZES[style.fontSize]?.value ?? FONT_SIZES.m.value;
   return {
-    ...(size ? { "--canvas-font-size": `${size}px` } : {}),
+    "--canvas-font-size": `${size}px`,
+    fontFamily: (FONT_FAMILIES[style.fontFamily] ?? FONT_FAMILIES.sans).value,
     textAlign: style.textAlign,
   };
 }
@@ -208,6 +231,7 @@ export function toFlowNode(id, value) {
       size: value.size,
       mime: value.mime,
       label: value.label,
+      shape: value.shape,
       locked: Boolean(value.locked),
       secret: Boolean(value.secret),
       group: value.group ?? null,
@@ -300,6 +324,7 @@ export function addNode(doc, type, { x, y, ...extra }) {
       h: defaults.h,
       z: topZ(doc, type === "frame") + 1,
       ...(defaults.color ? { color: defaults.color } : {}),
+      ...(defaults.shape ? { shape: defaults.shape } : {}),
       ...(defaults.label ? { label: defaults.label } : {}),
       ...extra,
     });
@@ -580,7 +605,7 @@ export function reorder(doc, ids, direction) {
   if (Object.keys(patches).length) updateNodes(doc, patches);
 }
 
-const TYPE_NAMES = { text: "Text", sticky: "Sticky note", frame: "Group", image: "Image", file: "File" };
+const TYPE_NAMES = { text: "Text", sticky: "Sticky note", frame: "Group", image: "Image", file: "File", shape: "Shape" };
 
 // Name shown in the layers panel. Example: text node "Launch plan\n…" -> "Launch plan"
 export function layerName(doc, id, value) {
@@ -591,7 +616,9 @@ export function layerName(doc, id, value) {
     .split("\n")
     .map((line) => line.trim())
     .find(Boolean);
-  return text ? text.slice(0, 48) : TYPE_NAMES[value.type] ?? "Item";
+  if (text) return text.slice(0, 48);
+  if (value.type === "shape") return SHAPES[value.shape]?.label ?? "Shape";
+  return TYPE_NAMES[value.type] ?? "Item";
 }
 
 /*
@@ -614,4 +641,114 @@ export function layerTree(doc) {
       children: items.filter((item) => item.value.group === frame.id).sort(byZ),
     })),
   ];
+}
+
+// ---------------------------------------------------------------------------
+// Flowchart shapes
+// ---------------------------------------------------------------------------
+
+/*
+ * Each shape draws its outline as an SVG path in the node's real pixel size
+ * (so curves and corners never stretch) and says how far to keep its text
+ * from the edges. `size` is the default box for a new shape.
+ * Example: SHAPES.decision.path(140, 100) -> "M70 0L140 50L70 100L0 50Z"
+ */
+export const SHAPES = {
+  process: {
+    label: "Process",
+    icon: "mdi:rectangle-outline",
+    size: { w: 160, h: 80 },
+    path: (w, h) => roundedRect(w, h, 4),
+    inset: () => ({ x: 10, y: 8 }),
+  },
+  terminator: {
+    label: "Start / end",
+    icon: "mdi:pill",
+    size: { w: 160, h: 64 },
+    path: (w, h) => roundedRect(w, h, h / 2),
+    inset: (w, h) => ({ x: Math.min(w / 2, h / 2) * 0.7, y: 6 }),
+  },
+  decision: {
+    label: "Decision",
+    icon: "mdi:rhombus-outline",
+    size: { w: 160, h: 112 },
+    path: (w, h) => `M${w / 2} 0L${w} ${h / 2}L${w / 2} ${h}L0 ${h / 2}Z`,
+    inset: (w, h) => ({ x: w * 0.25, y: h * 0.22 }),
+  },
+  data: {
+    label: "Input / output",
+    icon: "mdi:rhombus-split-outline",
+    size: { w: 176, h: 80 },
+    path: (w, h) => {
+      const skew = Math.min(w * 0.2, h * 0.5);
+      return `M${skew} 0H${w}L${w - skew} ${h}H0Z`;
+    },
+    inset: (w, h) => ({ x: Math.min(w * 0.2, h * 0.5) + 6, y: 8 }),
+  },
+  ellipse: {
+    label: "Ellipse",
+    icon: "mdi:ellipse-outline",
+    size: { w: 140, h: 96 },
+    path: (w, h) => `M0 ${h / 2}A${w / 2} ${h / 2} 0 1 0 ${w} ${h / 2}A${w / 2} ${h / 2} 0 1 0 0 ${h / 2}Z`,
+    inset: (w, h) => ({ x: w * 0.15, y: h * 0.15 }),
+  },
+  database: {
+    label: "Database",
+    icon: "mdi:database-outline",
+    size: { w: 120, h: 112 },
+    path: (w, h) => {
+      const ry = Math.min(h * 0.12, 18);
+      // Body, then the front edge of the lid as a second open stroke.
+      return (
+        `M0 ${ry}A${w / 2} ${ry} 0 0 1 ${w} ${ry}V${h - ry}A${w / 2} ${ry} 0 0 1 0 ${h - ry}Z` +
+        `M0 ${ry}A${w / 2} ${ry} 0 0 0 ${w} ${ry}`
+      );
+    },
+    inset: (w, h) => ({ x: 8, y: Math.min(h * 0.12, 18) * 2 + 4 }),
+  },
+  document: {
+    label: "Document",
+    icon: "mdi:file-document-outline",
+    size: { w: 160, h: 96 },
+    path: (w, h) =>
+      `M0 0H${w}V${h * 0.85}C${w * 0.75} ${h * 0.68} ${w * 0.25} ${h * 1.02} 0 ${h * 0.85}Z`,
+    inset: (w, h) => ({ x: 10, y: h * 0.08 }),
+  },
+  preparation: {
+    label: "Preparation",
+    icon: "mdi:hexagon-outline",
+    size: { w: 176, h: 80 },
+    path: (w, h) => {
+      const cut = Math.min(w * 0.2, h * 0.5);
+      return `M${cut} 0H${w - cut}L${w} ${h / 2}L${w - cut} ${h}H${cut}L0 ${h / 2}Z`;
+    },
+    inset: (w, h) => ({ x: Math.min(w * 0.2, h * 0.5) + 4, y: 8 }),
+  },
+  triangle: {
+    label: "Triangle",
+    icon: "mdi:triangle-outline",
+    size: { w: 140, h: 120 },
+    path: (w, h) => `M${w / 2} 0L${w} ${h}L0 ${h}Z`,
+    inset: (w, h) => ({ x: w * 0.25, y: h * 0.45 }),
+  },
+};
+
+// Example: roundedRect(100, 40, 8) -> rectangle path with 8px corners
+function roundedRect(w, h, radius) {
+  const r = Math.max(0, Math.min(radius, w / 2, h / 2));
+  return `M${r} 0H${w - r}A${r} ${r} 0 0 1 ${w} ${r}V${h - r}A${r} ${r} 0 0 1 ${w - r} ${h}H${r}A${r} ${r} 0 0 1 0 ${h - r}V${r}A${r} ${r} 0 0 1 ${r} 0Z`;
+}
+
+// SVG stroke for a node border. Example: dashed 2px -> { strokeDasharray: "6 4" }
+export function shapeStroke(style) {
+  const { border } = style;
+  if (border.style === "none") return { stroke: "none" };
+  const width = border.width;
+  return {
+    stroke: (STROKES[border.color] ?? STROKES.default).value,
+    strokeWidth: width,
+    strokeDasharray: border.style === "dashed" ? `${width * 3} ${width * 2}` : border.style === "dotted" ? `0 ${width * 2}` : undefined,
+    strokeLinecap: border.style === "dotted" ? "round" : "butt",
+    strokeLinejoin: "round",
+  };
 }

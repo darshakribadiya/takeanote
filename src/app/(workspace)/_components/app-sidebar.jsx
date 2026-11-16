@@ -33,8 +33,8 @@ import {
   SidebarMenuSkeleton,
   useSidebar,
 } from "@/components/ui/sidebar";
-import { APP_NAME } from "@/constants";
-import { altKey, modKey, noteTitle, relativeTime } from "@/lib/format";
+import { Logo } from "@/components/logo";
+import { altKey, modKey, notePreview, noteTitle, relativeTime } from "@/lib/format";
 import {
   createFolder,
   createTag,
@@ -50,6 +50,7 @@ import { countNotes, parseView, viewLabel } from "@/lib/notes/views";
 import { cn } from "@/lib/utils";
 import { AccountMenu } from "./account-menu";
 import { NoteActionsMenu, NoteContextMenu } from "./note-actions";
+import { lookFor, NotesPanel } from "./notes-panel";
 import { SidebarResizeHandle } from "./sidebar-resize";
 import { useWorkspace } from "./workspace";
 
@@ -98,7 +99,7 @@ function readSections() {
  * under Archive / Trash on short screens.
  */
 export function AppSidebar({ notes, width, onWidthChange }) {
-  const { view, setView, selectedId, selectNote, newNote, openPalette, toast } = useWorkspace();
+  const { view, setView, selectedId, selectNote, newNote, openPalette, openAllNotes, toast } = useWorkspace();
   const { isMobile, setOpenMobile } = useSidebar();
   const status = useStore((s) => s.status);
   const allNotes = useStore((s) => s.notes);
@@ -111,6 +112,11 @@ export function AppSidebar({ notes, width, onWidthChange }) {
   const [confirmEmpty, setConfirmEmpty] = useState(false);
   const [shared, setShared] = useState(null);
   const { kind } = parseView(view);
+
+  // Keep the open note in view as it changes (keyboard j/k, palette, links).
+  useEffect(() => {
+    if (selectedId) document.getElementById(`note-item-${selectedId}`)?.scrollIntoView({ block: "nearest" });
+  }, [selectedId, view]);
 
   // Notes shared with this email: loaded for the count, refreshed when the view opens.
   useEffect(() => {
@@ -144,6 +150,11 @@ export function AppSidebar({ notes, width, onWidthChange }) {
 
   function go(nextView) {
     setView(nextView);
+  }
+
+  function showAllNotes() {
+    openAllNotes();
+    if (isMobile) setOpenMobile(false);
   }
 
   function open(noteId) {
@@ -194,12 +205,7 @@ export function AppSidebar({ notes, width, onWidthChange }) {
     <Sidebar collapsible="offcanvas">
       <SidebarResizeHandle onChange={onWidthChange} width={width} />
       <SidebarHeader className="gap-3">
-        <div className="flex items-center gap-2 px-1 pt-1">
-          <span className="flex size-7 items-center justify-center rounded-lg bg-primary-600 text-white">
-            <Icon className="size-4" icon="mdi:lightning-bolt-outline" />
-          </span>
-          <span className="font-heading font-semibold">{APP_NAME}</span>
-        </div>
+        <Logo className="px-1 pt-1" />
         <div className="flex gap-1.5">
           <Button className="min-w-0 flex-1 justify-between" onClick={() => newNote()}>
             <span className="inline-flex items-center gap-2">
@@ -237,7 +243,14 @@ export function AppSidebar({ notes, width, onWidthChange }) {
         <SidebarGroup>
           <SidebarMenu>
             {PRIMARY_VIEWS.map((item) => (
-              <ViewItem active={view === item.view} count={counts[item.view]} item={item} key={item.view} onSelect={go} />
+              <ViewItem
+                active={view === item.view}
+                count={counts[item.view]}
+                item={item}
+                key={item.view}
+                // "All notes" opens the overview page; the other views filter the list below.
+                onSelect={item.view === "all" ? showAllNotes : go}
+              />
             ))}
           </SidebarMenu>
         </SidebarGroup>
@@ -331,10 +344,10 @@ export function AppSidebar({ notes, width, onWidthChange }) {
           )}
         />
 
-        <SidebarGroup>
-          <SidebarGroupLabel className="gap-2 pe-1">
-            <span className="min-w-0 flex-1 truncate">{viewLabel(view, { folders: folderMap, tags: tagMap })}</span>
-            {kind === "trash" && notes.length > 0 && (
+        <NotesPanel
+          actions={
+            kind === "trash" &&
+            notes.length > 0 && (
               <button
                 className="rounded px-1.5 py-0.5 text-xs text-destructive-foreground hover:bg-destructive/8"
                 onClick={() => setConfirmEmpty(true)}
@@ -342,42 +355,40 @@ export function AppSidebar({ notes, width, onWidthChange }) {
               >
                 Empty
               </button>
-            )}
-          </SidebarGroupLabel>
-          <SidebarGroupContent>
-            <SidebarMenu>
-              {kind === "shared" ? (
+            )
+          }
+          count={kind === "shared" ? counts.shared : notes.length}
+          emptyText={EMPTY_TEXT[kind]}
+          kind={kind}
+          label={viewLabel(view, { folders: folderMap, tags: tagMap })}
+          loading={kind !== "shared" && status === "booting"}
+          notes={notes}
+          onClear={kind === "all" ? undefined : () => go("all")}
+          renderRow={(note) => (
+            <NoteRow
+              active={note.id === selectedId}
+              key={note.id}
+              note={note}
+              onOpen={() => open(note.id)}
+              onRename={() => setRenamingId(note.id)}
+              onRenameDone={(title) => {
+                setRenamingId(null);
+                if (title !== null && title.trim() !== noteTitle(note)) {
+                  run(() => renameNote(note, title), "Couldn't rename note");
+                }
+              }}
+              renaming={renamingId === note.id}
+              showTime={kind === "trash" ? note.deleted_at : kind === "recent" ? note.last_accessed_at : null}
+            />
+          )}
+          rows={
+            kind === "shared" && (
+              <SidebarMenu>
                 <SharedRows emptyText={EMPTY_TEXT.shared} notes={shared} />
-              ) : status === "booting" ? (
-                Array.from({ length: 5 }, (_, index) => (
-                  <SidebarMenuItem key={index}>
-                    <SidebarMenuSkeleton showIcon />
-                  </SidebarMenuItem>
-                ))
-              ) : notes.length ? (
-                notes.map((note) => (
-                  <NoteRow
-                    active={note.id === selectedId}
-                    key={note.id}
-                    note={note}
-                    onOpen={() => open(note.id)}
-                    onRename={() => setRenamingId(note.id)}
-                    onRenameDone={(title) => {
-                      setRenamingId(null);
-                      if (title !== null && title.trim() !== noteTitle(note)) {
-                        run(() => renameNote(note, title), "Couldn't rename note");
-                      }
-                    }}
-                    renaming={renamingId === note.id}
-                    showTime={kind === "trash" ? note.deleted_at : kind === "recent" ? note.last_accessed_at : null}
-                  />
-                ))
-              ) : (
-                <p className="px-2 py-2 text-xs text-muted-foreground">{EMPTY_TEXT[kind]}</p>
-              )}
-            </SidebarMenu>
-          </SidebarGroupContent>
-        </SidebarGroup>
+              </SidebarMenu>
+            )
+          }
+        />
 
         <SidebarGroup className="mt-auto">
           <SidebarMenu>
@@ -420,8 +431,7 @@ export function AppSidebar({ notes, width, onWidthChange }) {
 
 /*
  * Folders / Tags: the header collapses the section. Open, it lists the
- * first PREVIEW_COUNT rows; the last one fades out under a gradient and
- * "Show N more" reveals the rest.
+ * first PREVIEW_COUNT rows and "Show N more" reveals the rest.
  */
 function CollapsibleSection({ title, open, onOpenChange, items, renderItem, onAdd, addLabel, extra, emptyHint }) {
   const [showAll, setShowAll] = useState(false);
@@ -451,11 +461,8 @@ function CollapsibleSection({ title, open, onOpenChange, items, renderItem, onAd
       {open && (
         <SidebarGroupContent>
           <SidebarMenu>
-            {visible.map((item, index) => (
-              <SidebarMenuItem
-                className={cn(limited && index === visible.length - 1 && "sidebar-fade-last")}
-                key={item.id}
-              >
+            {visible.map((item) => (
+              <SidebarMenuItem key={item.id}>
                 {renderItem(item)}
               </SidebarMenuItem>
             ))}
@@ -493,6 +500,8 @@ function NoteRow({ note, active, renaming, showTime, onOpen, onRename, onRenameD
   }
 
   const time = showTime ?? note.content_updated_at;
+  // The first lines after the title, so similar titles are easy to tell apart.
+  const preview = notePreview(note);
   return (
     <SidebarMenuItem>
       <NoteContextMenu note={note} onRename={onRename}>
@@ -508,13 +517,14 @@ function NoteRow({ note, active, renaming, showTime, onOpen, onRename, onRenameD
             className="mt-0.5 self-start text-muted-foreground"
             icon={note.kind === "canvas" ? "mdi:vector-square" : "mdi:file-document-outline"}
           />
-          <span className="flex min-w-0 flex-1 flex-col">
+          <span className="flex min-w-0 flex-1 flex-col gap-0.5">
             <span className="flex items-center gap-1">
               <span className="min-w-0 flex-1 truncate font-medium">{noteTitle(note)}</span>
               {note.is_pinned && <Icon className="size-3.5! shrink-0 text-primary-500" icon="mdi:pin-outline" />}
               {note.is_favorite && <Icon className="size-3.5! shrink-0 text-secondary-500" icon="mdi:star-outline" />}
             </span>
-            <time className="text-xs text-muted-foreground" dateTime={time}>
+            {preview && <span className="truncate text-xs text-muted-foreground">{preview}</span>}
+            <time className="text-[0.7rem] text-muted-foreground/80" dateTime={time}>
               {relativeTime(time)}
             </time>
           </span>
@@ -536,7 +546,7 @@ function NoteRow({ note, active, renaming, showTime, onOpen, onRename, onRenameD
 function ViewItem({ item, active, count, onSelect }) {
   return (
     <SidebarMenuItem>
-      <SidebarMenuButton isActive={active} onClick={() => onSelect(item.view)}>
+      <SidebarMenuButton className={cn(active && lookFor(item.view).active)} isActive={active} onClick={() => onSelect(item.view)}>
         <Icon icon={item.icon} />
         <span>{item.label}</span>
       </SidebarMenuButton>

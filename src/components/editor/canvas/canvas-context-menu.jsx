@@ -1,8 +1,9 @@
 "use client";
 
 import { MenuCheckboxItem, MenuSeparator } from "@/components/ui/menu";
-import { alignNodes, patchNodes, reorder } from "@/lib/editor/canvas-model";
+import { alignNodes, patchNodes, reorder, SHAPES } from "@/lib/editor/canvas-model";
 import { PointerMenu, PointerMenuItem, PointerSubMenu as SubMenu, ShowHiddenTextItem } from "../pointer-menu";
+import { TextBoxItems } from "./text-box-menu";
 
 // Shared with the selection toolbar. `min`: how many boxes the action needs.
 export const ALIGN_ACTIONS = [
@@ -31,13 +32,18 @@ const ADD_HERE = [
 
 /*
  * Right-click menu for the board. `menu.target.kind` says what was
- * clicked: "nodes" (the current selection), "edge" or "pane" (empty
- * board, with the flow-space `point` that was clicked).
+ * clicked: "nodes" (the current selection), "text-edit" (inside a text box
+ * being typed in), "edge" or "pane" (empty board, with the flow-space
+ * `point` that was clicked).
  */
 export function CanvasContextMenu({ menu, onClose, doc, readOnly, selection, board }) {
   const kind = menu.target?.kind;
+  const editingNode = kind === "text-edit" ? board.nodeById(menu.target.nodeId) : null;
   return (
     <PointerMenu menu={menu} onClose={onClose}>
+      {editingNode && !readOnly && (
+        <TextBoxItems doc={doc} editing getEditor={board.getEditor} nodes={[editingNode]} onError={board.onError} />
+      )}
       {kind === "nodes" && !readOnly && <NodeItems board={board} doc={doc} selection={selection} />}
       {kind === "edge" && !readOnly && (
         <PointerMenuItem destructive icon="mdi:delete-outline" label="Delete arrow" onClick={board.deleteSelection} shortcut="Backspace" />
@@ -53,13 +59,23 @@ function NodeItems({ doc, selection, board }) {
   const single = nodes.length === 1 ? nodes[0] : null;
   const hasFrames = nodes.some((node) => node.type === "frame");
   const allLocked = nodes.length > 0 && nodes.every((node) => node.data.locked);
-  const textNodes = nodes.filter((node) => node.type === "text" || node.type === "sticky");
+  const textNodes = nodes.filter((node) => ["text", "sticky", "shape"].includes(node.type));
   const allSecret = textNodes.length > 0 && textNodes.every((node) => node.data.secret);
+  // Text and box options show when every selected item is a text box or shape.
+  const textBoxes = nodes.every((node) => node.type === "text" || node.type === "shape") ? nodes : [];
+  const shapes = nodes.every((node) => node.type === "shape") ? nodes : [];
   if (!ids.length) return null;
 
   return (
     <>
-      {single && (single.type === "text" || single.type === "sticky") && (
+      {shapes.length > 0 && <ChangeShape doc={doc} nodes={shapes} />}
+      {textBoxes.length > 0 && (
+        <>
+          <TextBoxItems doc={doc} getEditor={board.getEditor} nodes={textBoxes} onError={board.onError} />
+          <MenuSeparator />
+        </>
+      )}
+      {single && ["text", "sticky", "shape"].includes(single.type) && (
         <PointerMenuItem icon="mdi:pencil-outline" label="Edit text" onClick={() => board.editNode(single.id)} shortcut="Enter" />
       )}
       <PointerMenuItem icon="mdi:content-copy" label="Duplicate" onClick={board.duplicateSelection} shortcut="Mod D" />
@@ -139,6 +155,17 @@ function PaneItems({ board, point, readOnly }) {
             ))}
             <PointerMenuItem icon="mdi:image-plus-outline" label="Image or file…" onClick={() => board.pickFiles(point)} />
           </SubMenu>
+          <SubMenu icon="mdi:shape-plus-outline" label="Add shape here">
+            {Object.entries(SHAPES).map(([key, shape]) => (
+              <PointerMenuItem
+                icon={shape.icon}
+                key={key}
+                label={shape.label}
+                onClick={() => board.addShape(key, point)}
+                shortcut={key === "process" ? "R" : key === "decision" ? "D" : undefined}
+              />
+            ))}
+          </SubMenu>
           <PointerMenuItem disabled={!board.canUndo} icon="mdi:undo" label="Undo" onClick={board.undo} shortcut="Mod Z" />
           <PointerMenuItem disabled={!board.canRedo} icon="mdi:redo" label="Redo" onClick={board.redo} shortcut="Mod Shift Z" />
           <PointerMenuItem disabled={board.empty} icon="mdi:select-all" label="Select all" onClick={board.selectAll} />
@@ -162,5 +189,28 @@ function PaneItems({ board, point, readOnly }) {
         Layers panel
       </MenuCheckboxItem>
     </>
+  );
+}
+
+// Swap the outline of the selected shapes; text and style stay.
+function ChangeShape({ doc, nodes }) {
+  const current = nodes.every((node) => node.data.shape === nodes[0].data.shape) ? nodes[0].data.shape : null;
+  return (
+    <SubMenu icon="mdi:shape-outline" label="Change shape">
+      {Object.entries(SHAPES).map(([key, shape]) => (
+        <PointerMenuItem
+          icon={current === key ? "mdi:check" : shape.icon}
+          key={key}
+          label={shape.label}
+          onClick={() =>
+            patchNodes(
+              doc,
+              nodes.map((node) => node.id),
+              { shape: key },
+            )
+          }
+        />
+      ))}
+    </SubMenu>
   );
 }

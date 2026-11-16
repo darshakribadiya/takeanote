@@ -6,6 +6,7 @@ import Link from "next/link";
 import { Icon } from "@iconify/react";
 import { NoteBody } from "@/components/editor/note-body";
 import { AuthForm } from "@/components/auth-form";
+import { LogoMark } from "@/components/logo";
 import { NameDialog } from "@/components/name-dialog";
 import { PresenceAvatars } from "@/components/presence-avatars";
 import { AutosaveMenuItem, SaveControls } from "@/components/save-controls";
@@ -156,10 +157,8 @@ function SharedEditor({ share, user: initialUser }) {
   return (
     <div className="flex h-dvh flex-col">
       <header className="z-10 flex h-14 shrink-0 items-center gap-3 border-b bg-background/80 px-4 backdrop-blur">
-        <Link className="inline-flex items-center gap-2 font-heading font-semibold" href="/">
-          <span className="flex size-7 items-center justify-center rounded-lg bg-primary-600 text-white">
-            <Icon className="size-4" icon="mdi:lightning-bolt-outline" />
-          </span>
+        <Link aria-label={`${APP_NAME} home`} className="inline-flex items-center gap-2 font-heading font-semibold" href="/">
+          <LogoMark />
           <span className="max-sm:hidden">{APP_NAME}</span>
         </Link>
         <Badge variant={canEdit ? "info" : "secondary"}>

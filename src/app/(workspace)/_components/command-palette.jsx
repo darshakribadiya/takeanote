@@ -31,7 +31,7 @@ import { useWorkspace } from "./workspace";
 export function CommandPalette({ open, onOpenChange }) {
   const [search, setSearch] = useState("");
   const [bodyMatches, setBodyMatches] = useState({ query: "", ids: new Set() });
-  const { newNote, selectNote, setView, setReadMode, openShortcuts } = useWorkspace();
+  const { newNote, selectNote, setView, setReadMode, openShortcuts, openAllNotes } = useWorkspace();
   const notes = useStore((s) => s.notes);
   const folders = useStore((s) => s.folders);
   const tags = useStore((s) => s.tags);
@@ -61,7 +61,7 @@ export function CommandPalette({ open, onOpenChange }) {
     ];
 
     const places = [
-      { value: "view:all", label: "Go to All notes", icon: "mdi:note-multiple-outline", run: () => setView("all") },
+      { value: "view:all", label: "Go to All notes", icon: "mdi:note-multiple-outline", run: openAllNotes },
       { value: "view:favorites", label: "Go to Favorites", icon: "mdi:star-outline", run: () => setView("favorites") },
       { value: "view:recent", label: "Go to Recent", icon: "mdi:clock-outline", run: () => setView("recent") },
       { value: "view:shared", label: "Go to Shared with me", icon: "mdi:account-multiple-outline", run: () => setView("shared") },
@@ -95,7 +95,7 @@ export function CommandPalette({ open, onOpenChange }) {
       { value: "Actions", items: actions },
       { value: "Go to", items: places },
     ].filter((group) => group.items.length);
-  }, [notes, folders, tags, newNote, selectNote, setView, setReadMode, openShortcuts]);
+  }, [notes, folders, tags, newNote, selectNote, setView, setReadMode, openShortcuts, openAllNotes]);
 
   useEffect(() => {
     const trimmed = search.trim();

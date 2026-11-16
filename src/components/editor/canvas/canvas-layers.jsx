@@ -11,6 +11,7 @@ const TYPE_ICONS = {
   frame: "mdi:group",
   image: "mdi:image-outline",
   file: "mdi:file-outline",
+  shape: "mdi:shape-outline",
 };
 
 // Names follow the text inside boxes, so refresh shortly after edits.

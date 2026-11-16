@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useSyncExternalStore } from "react";
+import { useCallback, useRef, useSyncExternalStore } from "react";
 import { setTextMinimal, TITLE } from "@/lib/sync/doc-model";
 import { cn } from "@/lib/utils";
 
@@ -20,6 +20,8 @@ export function NoteTitle({ doc, readOnly, autoFocus, onExit, className, inputRe
     [ytext],
   );
   const title = useSyncExternalStore(subscribe, () => ytext.toString(), () => "");
+  // When the title opens focused (e.g. carried over from the blank page), the caret starts at its end.
+  const placedCaret = useRef(false);
 
   const baseClass = "w-full bg-transparent font-heading text-[2em] leading-tight font-semibold tracking-tight wrap-break-word";
 
@@ -33,6 +35,12 @@ export function NoteTitle({ doc, readOnly, autoFocus, onExit, className, inputRe
       autoFocus={autoFocus}
       className={cn(baseClass, "field-sizing-content resize-none outline-none placeholder:text-muted-foreground/40", className)}
       onChange={(event) => setTextMinimal(ytext, event.target.value.replace(/\n/g, " "))}
+      onFocus={(event) => {
+        if (!autoFocus || placedCaret.current) return;
+        placedCaret.current = true;
+        const end = event.currentTarget.value.length;
+        event.currentTarget.setSelectionRange(end, end);
+      }}
       onKeyDown={(event) => {
         const atEnd = event.currentTarget.selectionStart === event.currentTarget.value.length;
         if (event.key === "Enter" || (event.key === "ArrowDown" && atEnd) || (event.key === "Tab" && !event.shiftKey)) {

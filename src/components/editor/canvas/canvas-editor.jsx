@@ -38,6 +38,7 @@ import {
   regroupByPosition,
   removeElements,
   reorder,
+  SHAPES,
   toFlowEdge,
   toFlowNode,
   ungroup,
@@ -191,7 +192,7 @@ function CanvasBoard({ noteId, doc, readOnly, ensurePersisted, onError }) {
     if (readOnly) return null;
     const id = addNode(doc, type, { ...snapPoint(position, prefs.snap), ...extra });
     setNodes((current) => current.map((node) => ({ ...node, selected: node.id === id })));
-    if (type === "text" || type === "sticky") setEditingId(id);
+    if (type === "text" || type === "sticky" || type === "shape") setEditingId(id);
     return id;
   }
 
@@ -290,11 +291,13 @@ function CanvasBoard({ noteId, doc, readOnly, ensurePersisted, onError }) {
     { combo: "t", handler: () => create("text") },
     { combo: "s", handler: () => create("sticky") },
     { combo: "g", handler: () => create("frame") },
+    { combo: "r", handler: () => addShape("process") },
+    { combo: "d", handler: () => addShape("decision") },
     {
       combo: "enter",
       handler: () => {
         const node = selectedNodes.length === 1 ? selectedNodes[0] : null;
-        if (node && (node.type === "text" || node.type === "sticky") && !readOnly) setEditingId(node.id);
+        if (node && ["text", "sticky", "shape"].includes(node.type) && !readOnly) setEditingId(node.id);
       },
     },
   ]);
@@ -319,8 +322,12 @@ function CanvasBoard({ noteId, doc, readOnly, ensurePersisted, onError }) {
     redo: () => undoManager.redo(),
     // Same offset as double-click, so the new box sits under the pointer.
     addAt: (type, point) => create(type, point ? { x: point.x - 20, y: point.y - 20 } : undefined),
+    addShape,
     pickFiles: (point) => pickFiles(point),
     editNode: (id) => setEditingId(id),
+    getEditor: (id) => editors.get(id) ?? null,
+    nodeById: (id) => nodes.find((node) => node.id === id) ?? null,
+    onError,
     selectAll: () => select(nodes.filter((node) => !node.hidden).map((node) => node.id)),
     fitView: () => flow.fitView({ padding: 0.2, duration: 200, maxZoom: 1 }),
     resetZoom: () => flow.zoomTo(1, { duration: 150 }),
@@ -330,6 +337,13 @@ function CanvasBoard({ noteId, doc, readOnly, ensurePersisted, onError }) {
     ungroupSelection,
     toggleLock,
   };
+
+  // Example: addShape("decision") -> a 160×112 diamond in the middle of the view
+  function addShape(shape, point) {
+    const { w, h } = SHAPES[shape].size;
+    const at = point ? { x: point.x - w / 2, y: point.y - h / 2 } : centerOfView("shape");
+    return create("shape", at, { shape, w, h });
+  }
 
   function setPref(key, value) {
     setPrefs((current) => {
@@ -341,7 +355,21 @@ function CanvasBoard({ noteId, doc, readOnly, ensurePersisted, onError }) {
     });
   }
 
-  const context = useMemo(() => ({ doc, editingId, setEditingId, readOnly }), [doc, editingId, readOnly]);
+  // Text box editors by node id, so the right-click menu can format them.
+  const [editors] = useState(() => new Map());
+  const context = useMemo(
+    () => ({
+      doc,
+      editingId,
+      setEditingId,
+      readOnly,
+      registerEditor: (id, editor) => {
+        editors.set(id, editor);
+        return () => editors.get(id) === editor && editors.delete(id);
+      },
+    }),
+    [doc, editingId, readOnly, editors],
+  );
 
   return (
     <CanvasContext value={context}>
@@ -396,7 +424,13 @@ function CanvasBoard({ noteId, doc, readOnly, ensurePersisted, onError }) {
             } catch {}
           }}
           onNodeContextMenu={(event, node) => {
-            if (node.id === editingId) return;
+            if (node.id === editingId) {
+              // Typing in a text box: text and box options for the selection there.
+              if (node.type === "text" || node.type === "shape") {
+                openContextMenu(event, { kind: "text-edit", nodeId: node.id });
+              }
+              return;
+            }
             // Right-clicking outside the selection selects that box, like a desktop app.
             if (!node.selected) select([node.id]);
             openContextMenu(event, { kind: "nodes" });
@@ -484,6 +518,7 @@ function CanvasBoard({ noteId, doc, readOnly, ensurePersisted, onError }) {
           canUndo={undoManager.canUndo()}
           empty={!nodes.length}
           onAdd={create}
+          onAddShape={addShape}
           onPickFiles={() => pickFiles()}
           onRedo={() => undoManager.redo()}
           onUndo={() => undoManager.undo()}
@@ -555,7 +590,7 @@ const TOOLS = [
   { type: "frame", label: "Group", icon: "mdi:group", key: "G" },
 ];
 
-function CanvasToolbar({ onAdd, onPickFiles, onUndo, onRedo, canUndo, canRedo, prefs, setPref, readOnly, empty }) {
+function CanvasToolbar({ onAdd, onAddShape, onPickFiles, onUndo, onRedo, canUndo, canRedo, prefs, setPref, readOnly, empty }) {
   const flow = useReactFlow();
   const { zoom } = useViewport();
 
@@ -581,6 +616,21 @@ function CanvasToolbar({ onAdd, onPickFiles, onUndo, onRedo, canUndo, canRedo, p
                   <Icon icon={tool.icon} />
                 </ToolButton>
               ))}
+              <Menu>
+                <MenuTrigger render={<ToolButton label="Shapes (R, D)" />}>
+                  <Icon icon="mdi:shape-plus-outline" />
+                </MenuTrigger>
+                <MenuPopup align="center" side="top">
+                  {Object.entries(SHAPES).map(([key, shape]) => (
+                    <MenuItem key={key} onClick={() => onAddShape(key)}>
+                      <Icon icon={shape.icon} />
+                      {shape.label}
+                      {key === "process" && <MenuShortcut>R</MenuShortcut>}
+                      {key === "decision" && <MenuShortcut>D</MenuShortcut>}
+                    </MenuItem>
+                  ))}
+                </MenuPopup>
+              </Menu>
               <ToolButton label="Image or file" onClick={onPickFiles}>
                 <Icon icon="mdi:image-plus-outline" />
               </ToolButton>

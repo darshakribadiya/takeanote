@@ -5,6 +5,8 @@ export async function proxy(request) {
 }
 
 export const config = {
-  // Skip static assets and images; they never need an auth session.
-  matcher: ["/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico)$).*)"],
+  // Skip static assets, images and metadata files; they never need an auth session.
+  matcher: [
+    "/((?!_next/static|_next/image|favicon.ico|icon.svg|apple-icon|opengraph-image|robots.txt|sitemap.xml|manifest.webmanifest|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico)$).*)",
+  ],
 };

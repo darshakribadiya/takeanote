@@ -1,6 +1,7 @@
 "use client";
 
 import { MenuSeparator } from "@/components/ui/menu";
+import { copySelection, pasteInto as paste } from "@/lib/editor/clipboard";
 import { activeBlockType, ALIGNMENTS, BLOCK_TYPES, MARKS } from "@/lib/editor/formatting";
 import { SLASH_COMMANDS } from "@/lib/editor/slash-commands";
 import { PointerMenu, PointerMenuItem, PointerSubMenu as SubMenu, ShowHiddenTextItem, usePointerMenu } from "../pointer-menu";
@@ -215,36 +216,4 @@ function EditableItems({ editor, target, actions, run }) {
       <ShowHiddenTextItem />
     </>
   );
-}
-
-// ---------------------------------------------------------------------------
-// Clipboard: the menu has focus, so execCommand("copy") would copy nothing.
-// Serialize the selection the way ProseMirror does for Ctrl+C instead.
-// ---------------------------------------------------------------------------
-
-async function copySelection(editor) {
-  const { dom, text } = editor.view.serializeForClipboard(editor.state.selection.content());
-  if (typeof ClipboardItem === "undefined") {
-    await navigator.clipboard.writeText(text);
-    return;
-  }
-  await navigator.clipboard.write([
-    new ClipboardItem({
-      "text/html": new Blob([dom.innerHTML], { type: "text/html" }),
-      "text/plain": new Blob([text], { type: "text/plain" }),
-    }),
-  ]);
-}
-
-async function paste(editor, { plain = false } = {}) {
-  editor.view.focus();
-  if (!plain && navigator.clipboard.read) {
-    for (const item of await navigator.clipboard.read()) {
-      if (item.types.includes("text/html")) {
-        editor.view.pasteHTML(await (await item.getType("text/html")).text());
-        return;
-      }
-    }
-  }
-  editor.view.pasteText(await navigator.clipboard.readText());
 }
