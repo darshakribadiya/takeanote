@@ -170,7 +170,7 @@ export function Workspace() {
       isFavorite: kind === "favorites",
     });
     if (content) initialTexts.current.set(note.id, content);
-    if (["archive", "trash", "recent", "tag"].includes(kind)) changeView(DEFAULT_VIEW);
+    if (["archive", "trash", "recent", "tag", "shared"].includes(kind)) changeView(DEFAULT_VIEW);
     setReadMode(false);
     selectNote(note.id, { focus: content ? "content" : noteKind === "canvas" ? null : "title" });
   }

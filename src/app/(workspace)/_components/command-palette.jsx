@@ -64,6 +64,7 @@ export function CommandPalette({ open, onOpenChange }) {
       { value: "view:all", label: "Go to All notes", icon: "mdi:note-multiple-outline", run: () => setView("all") },
       { value: "view:favorites", label: "Go to Favorites", icon: "mdi:star-outline", run: () => setView("favorites") },
       { value: "view:recent", label: "Go to Recent", icon: "mdi:clock-outline", run: () => setView("recent") },
+      { value: "view:shared", label: "Go to Shared with me", icon: "mdi:account-multiple-outline", run: () => setView("shared") },
       { value: "view:archive", label: "Go to Archive", icon: "mdi:archive-outline", run: () => setView("archive") },
       { value: "view:trash", label: "Go to Trash", icon: "mdi:delete-outline", run: () => setView("trash") },
       ...Object.values(folders).map((folder) => ({

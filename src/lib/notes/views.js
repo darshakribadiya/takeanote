@@ -1,7 +1,7 @@
 
 /*
  * A view is a string so it can live in the URL and localStorage.
- * Examples: "all", "favorites", "recent", "archive", "trash",
+ * Examples: "all", "favorites", "recent", "shared", "archive", "trash",
  * "folder:<uuid>", "tag:<uuid>"
  */
 export const DEFAULT_VIEW = "all";
@@ -16,7 +16,14 @@ export function viewLabel(view, { folders, tags }) {
   const { kind, id } = parseView(view);
   if (kind === "folder") return folders[id]?.name ?? "Folder";
   if (kind === "tag") return tags[id] ? `#${tags[id].name}` : "Tag";
-  return { all: "All notes", favorites: "Favorites", recent: "Recent", archive: "Archive", trash: "Trash" }[kind];
+  return {
+    all: "All notes",
+    favorites: "Favorites",
+    recent: "Recent",
+    shared: "Shared with me",
+    archive: "Archive",
+    trash: "Trash",
+  }[kind];
 }
 
 function isLive(note) {
@@ -33,6 +40,9 @@ function belongsToView(note, { kind, id }, noteTags) {
       return !note.deleted_at && Boolean(note.archived_at);
     case "trash":
       return Boolean(note.deleted_at);
+    // Other people's notes; the sidebar lists them from listSharedWithMe().
+    case "shared":
+      return false;
     case "folder":
       return isLive(note) && note.folder_id === id;
     case "tag":

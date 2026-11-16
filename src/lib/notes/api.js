@@ -615,6 +615,69 @@ export async function joinShare(token) {
   return data?.[0] ?? null;
 }
 
+// ---------------------------------------------------------------------------
+// Sharing with an email address (see supabase/migrations/*_note_invites.sql)
+// ---------------------------------------------------------------------------
+
+// Example: isValidEmail("ada@example.com") -> true
+export function isValidEmail(email) {
+  return /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(normalizeEmail(email ?? ""));
+}
+
+// Personal link for someone invited by email; it only opens for that email.
+export function inviteUrl(noteId) {
+  const origin = process.env.NEXT_PUBLIC_SITE_URL || window.location.origin;
+  return `${origin}/s/n/${noteId}`;
+}
+
+/*
+ * Invites one email (or updates that email's invite). Works before the
+ * person has an account: the invite waits until they sign up with it.
+ */
+export async function shareWithEmail(noteId, { email, permission, expiresAt }) {
+  await ensurePersisted(noteId);
+  const { error } = await supabase().rpc("share_note_with_email", {
+    p_note: noteId,
+    p_email: normalizeEmail(email),
+    p_permission: permission,
+    p_expires_at: expiresAt,
+  });
+  if (error) throw error;
+}
+
+/*
+ * Invites with their status. Example:
+ * [{ id, email, permission, expires_at, opened_at, last_opened_at, last_edited_at, invitee_id, full_name }]
+ */
+export async function listInvites(noteId) {
+  if (getState().notes[noteId]?._local) return [];
+  const { data, error } = await supabase().rpc("list_note_invites", { p_note: noteId });
+  if (error) throw error;
+  return data ?? [];
+}
+
+export async function revokeInvite(inviteId) {
+  const { error } = await supabase().rpc("revoke_note_invite", { p_invite: inviteId });
+  if (error) throw error;
+}
+
+// Notes other people shared with this account's email.
+export async function listSharedWithMe() {
+  const { data, error } = await supabase().rpc("shared_with_me");
+  if (error) throw error;
+  return data ?? [];
+}
+
+/*
+ * Opens a note shared with this account's email and records the visit.
+ * Returns { note_id, kind, title, permission } or null without a working invite.
+ */
+export async function openInvitedNote(noteId) {
+  const { data, error } = await supabase().rpc("open_invited_note", { p_note: noteId });
+  if (error) throw error;
+  return data?.[0] ?? null;
+}
+
 /*
  * Everyone who can open the note: the owner and, when the caller is the
  * owner, each member who joined through a working link.

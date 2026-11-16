@@ -12,24 +12,8 @@ import { usePresence } from "@/hooks/use-presence";
 import { relativeTime } from "@/lib/format";
 import { createShare, findShare, listNotePeople, listShares, revokeShare, shareUrl } from "@/lib/notes/api";
 import { useStore } from "@/lib/notes/store";
+import { EXPIRY, expiryDate, InviteByEmail, PERMISSIONS } from "./invite-by-email";
 import { useWorkspace } from "./workspace";
-
-const PERMISSIONS = [
-  { value: "view", label: "Can view" },
-  { value: "edit", label: "Can edit" },
-];
-
-const EXPIRY = [
-  { value: "never", label: "Never expires" },
-  { value: "1", label: "Expires in 1 day" },
-  { value: "7", label: "Expires in 7 days" },
-  { value: "30", label: "Expires in 30 days" },
-];
-
-function expiryDate(value) {
-  if (value === "never") return null;
-  return new Date(Date.now() + Number(value) * 86400000).toISOString();
-}
 
 function isExpired(share) {
   return share.expires_at && new Date(share.expires_at) < new Date();
@@ -122,14 +106,20 @@ export function SharePopover({ note, open, onOpenChange, awareness }) {
         <Icon icon="mdi:share-variant-outline" />
         <span className="max-sm:hidden">Share</span>
       </PopoverTrigger>
-      <PopoverPopup align="end" className="w-80">
+      <PopoverPopup align="end" className="w-96 max-w-[calc(100vw-1rem)]">
         <div className="flex flex-col gap-4">
-          <div className="flex flex-col gap-1">
-            <PopoverTitle className="text-base">Share this note</PopoverTitle>
-            <p className="text-sm text-muted-foreground">Anyone with the link can open it after signing in.</p>
-          </div>
+          <PopoverTitle className="text-base">Share this note</PopoverTitle>
 
-          <div className="flex flex-col gap-2">
+          <section className="flex flex-col gap-2">
+            <h3 className="text-sm font-medium">Invite people</h3>
+            <InviteByEmail note={note} onlineIds={onlineIds} open={open} toast={toast} />
+          </section>
+
+          <section className="flex flex-col gap-2 border-t pt-3">
+            <div className="flex flex-col gap-0.5">
+              <h3 className="text-sm font-medium">Share link</h3>
+              <p className="text-xs text-muted-foreground">Anyone with the link can open it after signing in.</p>
+            </div>
             <div className="grid grid-cols-2 gap-2">
               <Select items={PERMISSIONS} onValueChange={setPermission} value={permission}>
                 <SelectTrigger aria-label="Permission" className="min-w-0" size="sm">
@@ -166,7 +156,7 @@ export function SharePopover({ note, open, onOpenChange, awareness }) {
                 instead of making a new one. Revoke it below to make a fresh link.
               </p>
             )}
-          </div>
+          </section>
 
           {shares === null ? (
             <div className="flex justify-center py-2">

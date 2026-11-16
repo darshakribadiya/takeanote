@@ -1,6 +1,6 @@
 import { Suspense } from "react";
 import { Skeleton } from "@/components/ui/skeleton";
-import { SharedNote } from "./_components/shared-note";
+import { SharedNote } from "../_components/shared-note";
 
 export const metadata = {
   title: "Shared note",

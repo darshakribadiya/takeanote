@@ -20,15 +20,22 @@ import { APP_NAME } from "@/constants";
 import { useAutosave } from "@/hooks/use-autosave";
 import { useHotkeys } from "@/hooks/use-hotkeys";
 import { useNoteSync } from "@/hooks/use-note-sync";
-import { ensureSession, joinShare } from "@/lib/notes/api";
+import { createClient } from "@/lib/supabase/client";
+import { ensureSession, joinShare, openInvitedNote } from "@/lib/notes/api";
 import { plainText, TITLE } from "@/lib/sync/doc-model";
 
 // Re-check the link now and then so a revoked or expired link closes the page.
 const RECHECK_MS = 60000;
 
-export function SharedNote({ params }) {
+/*
+ * A note opened by someone other than its owner. Two ways in:
+ *   /s/<token>  share link: anyone signed in who has the link
+ *   /s/n/<id>   personal link from an email invite: only that email
+ */
+export function SharedNote({ params, mode = "link" }) {
   use(browser("Shared notes load with the visitor's browser session."));
-  const { token } = use(params);
+  const { token, id } = use(params);
+  const key = mode === "invite" ? id : token;
   const [state, setState] = useState({ status: "loading", share: null, user: null });
 
   useEffect(() => {
@@ -43,7 +50,7 @@ export function SharedNote({ params }) {
           setState({ status: user ? "upgrade" : "signin", share: null, user });
           return;
         }
-        const share = await joinShare(token);
+        const share = mode === "invite" ? await openInvitedNote(key) : await joinShare(key);
         if (cancelled) return;
         setState((current) => {
           if (share) return { status: "ready", share: current.share ?? share, user };
@@ -61,7 +68,7 @@ export function SharedNote({ params }) {
       cancelled = true;
       clearInterval(interval);
     };
-  }, [token]);
+  }, [key, mode]);
 
   if (state.status === "loading") {
     return (
@@ -88,9 +95,21 @@ export function SharedNote({ params }) {
             <Icon icon="mdi:link-variant-off" />
           </EmptyMedia>
           <EmptyTitle>{state.status === "revoked" ? "This link was turned off" : "Link not available"}</EmptyTitle>
-          <EmptyDescription>It may have expired or been revoked by its owner.</EmptyDescription>
+          <EmptyDescription>
+            {mode === "invite"
+              ? `This note isn't shared with ${state.user?.email ?? "this account"}, or the invite expired. Ask the owner to share it with this email, or sign in with the invited one.`
+              : "It may have expired or been revoked by its owner."}
+          </EmptyDescription>
         </EmptyHeader>
-        <EmptyContent>
+        <EmptyContent className="flex-row justify-center">
+          {mode === "invite" && (
+            <Button
+              onClick={() => createClient().auth.signOut().then(() => location.reload())}
+              variant="outline"
+            >
+              Use another account
+            </Button>
+          )}
           <Button render={<Link href="/" />}>Write your own note</Button>
         </EmptyContent>
       </Empty>

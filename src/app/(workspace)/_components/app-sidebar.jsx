@@ -1,6 +1,7 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import Link from "next/link";
 import { Icon } from "@iconify/react";
 import {
   AlertDialog,
@@ -34,7 +35,16 @@ import {
 } from "@/components/ui/sidebar";
 import { APP_NAME } from "@/constants";
 import { altKey, modKey, noteTitle, relativeTime } from "@/lib/format";
-import { createFolder, createTag, deleteFolder, deleteTag, emptyTrash, renameFolder, renameNote } from "@/lib/notes/api";
+import {
+  createFolder,
+  createTag,
+  deleteFolder,
+  deleteTag,
+  emptyTrash,
+  listSharedWithMe,
+  renameFolder,
+  renameNote,
+} from "@/lib/notes/api";
 import { useStore } from "@/lib/notes/store";
 import { countNotes, parseView, viewLabel } from "@/lib/notes/views";
 import { cn } from "@/lib/utils";
@@ -47,6 +57,7 @@ const PRIMARY_VIEWS = [
   { view: "all", label: "All notes", icon: "mdi:note-multiple-outline" },
   { view: "favorites", label: "Favorites", icon: "mdi:star-outline" },
   { view: "recent", label: "Recent", icon: "mdi:clock-outline" },
+  { view: "shared", label: "Shared with me", icon: "mdi:account-multiple-outline" },
 ];
 
 const SECONDARY_VIEWS = [
@@ -60,6 +71,7 @@ const EMPTY_TEXT = {
   recent: "Notes you open show up here.",
   archive: "Archived notes show up here.",
   trash: "Trash is empty.",
+  shared: "Notes people share with your email show up here.",
   folder: "This folder is empty.",
   tag: "No notes with this tag.",
 };
@@ -97,7 +109,20 @@ export function AppSidebar({ notes, width, onWidthChange }) {
   const [renamingId, setRenamingId] = useState(null); // folder or note id
   const [sections, setSections] = useState(readSections);
   const [confirmEmpty, setConfirmEmpty] = useState(false);
+  const [shared, setShared] = useState(null);
   const { kind } = parseView(view);
+
+  // Notes shared with this email: loaded for the count, refreshed when the view opens.
+  useEffect(() => {
+    if (status !== "ready") return;
+    let cancelled = false;
+    listSharedWithMe()
+      .then((rows) => !cancelled && setShared(rows))
+      .catch(() => !cancelled && setShared((current) => current ?? []));
+    return () => {
+      cancelled = true;
+    };
+  }, [status, kind]);
 
   const folders = useMemo(
     () => Object.values(folderMap).sort((a, b) => a.position - b.position || a.name.localeCompare(b.name)),
@@ -113,8 +138,9 @@ export function AppSidebar({ notes, width, onWidthChange }) {
       ...tags.map((tag) => `tag:${tag.id}`),
     ];
     for (const key of views) result[key] = countNotes(allNotes, key, noteTags);
+    result.shared = shared?.length ?? 0;
     return result;
-  }, [allNotes, noteTags, folders, tags]);
+  }, [allNotes, noteTags, folders, tags, shared]);
 
   function go(nextView) {
     setView(nextView);
@@ -320,7 +346,9 @@ export function AppSidebar({ notes, width, onWidthChange }) {
           </SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>
-              {status === "booting" ? (
+              {kind === "shared" ? (
+                <SharedRows emptyText={EMPTY_TEXT.shared} notes={shared} />
+              ) : status === "booting" ? (
                 Array.from({ length: 5 }, (_, index) => (
                   <SidebarMenuItem key={index}>
                     <SidebarMenuSkeleton showIcon />
@@ -575,4 +603,35 @@ function NameInput({ defaultValue = "", placeholder, onDone, onCancel }) {
       value={value}
     />
   );
+}
+
+/*
+ * "Shared with me": other people's notes, opened on their shared page
+ * (/s/n/<id>) where access is checked against the invite.
+ */
+function SharedRows({ notes, emptyText }) {
+  if (notes === null) {
+    return Array.from({ length: 3 }, (_, index) => (
+      <SidebarMenuItem key={index}>
+        <SidebarMenuSkeleton showIcon />
+      </SidebarMenuItem>
+    ));
+  }
+  if (!notes.length) return <p className="px-2 py-2 text-xs text-muted-foreground">{emptyText}</p>;
+  return notes.map((note) => (
+    <SidebarMenuItem key={note.note_id}>
+      <SidebarMenuButton className="h-auto py-1.5" render={<Link href={`/s/n/${note.note_id}`} />}>
+        <Icon
+          className="mt-0.5 self-start text-muted-foreground"
+          icon={note.kind === "canvas" ? "mdi:vector-square" : "mdi:file-document-outline"}
+        />
+        <span className="flex min-w-0 flex-1 flex-col">
+          <span className="truncate font-medium">{note.title || "Untitled"}</span>
+          <span className="truncate text-xs text-muted-foreground">
+            {note.owner_name} · {note.permission === "edit" ? "Can edit" : "Can view"}
+          </span>
+        </span>
+      </SidebarMenuButton>
+    </SidebarMenuItem>
+  ));
 }
