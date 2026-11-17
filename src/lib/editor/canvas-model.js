@@ -823,20 +823,28 @@ function overlaps(a, b, margin = GRID / 2) {
 }
 
 /*
- * Adds an item of the same kind and style next to `sourceId` on `side`
- * (top | right | bottom | left), joined by an arrow. If that spot is
- * taken, it steps sideways until it finds room. Images and files get a
- * text box. Returns the new item's id.
- * Example: a 160×80 shape at 0,0, side "right" -> a 160×80 shape at 240,0
+ * Adds an item next to `sourceId` on `side` (top | right | bottom | left),
+ * joined by an arrow. If that spot is taken, it steps sideways until it
+ * finds room. Returns the new item's id.
+ *
+ * `choice` picks what to add: { type: "text" } | { type: "sticky" } |
+ * { type: "shape", shape: "decision" }. Without it, the new item copies
+ * the source's kind (images and files get a text box). Copies of the same
+ * kind keep its size and style; the source's shape is kept unless
+ * another one is chosen.
+ * Example: a 160×80 process at 0,0, side "right", { type: "shape", shape: "decision" }
+ *   -> a decision diamond (its own default size) at 240,…
  */
-export function addNeighbour(doc, sourceId, side) {
+export function addNeighbour(doc, sourceId, side, choice = null) {
   const map = nodesMap(doc);
   const source = map.get(sourceId);
   if (!source || !OPPOSITE_SIDE[side]) return null;
-  const type = ["text", "sticky", "shape"].includes(source.type) ? source.type : "text";
-  const sameKind = type === source.type && type !== "text";
-  const w = sameKind ? source.w : NODE_DEFAULTS[type].w;
-  const h = sameKind ? source.h : NODE_DEFAULTS[type].h;
+  const type = choice?.type ?? (["text", "sticky", "shape"].includes(source.type) ? source.type : "text");
+  const shape = type === "shape" ? (choice?.shape ?? source.shape ?? "process") : null;
+  const sameKind = type === source.type && type !== "text" && (type !== "shape" || shape === source.shape);
+  const size = sameKind ? source : type === "shape" ? (SHAPES[shape] ?? SHAPES.process).size : NODE_DEFAULTS[type];
+  const w = size.w;
+  const h = size.h;
 
   const horizontal = side === "left" || side === "right";
   let box = {
@@ -856,10 +864,20 @@ export function addNeighbour(doc, sourceId, side) {
     box = horizontal ? { ...box, y: straight + step * (h + GRID * 2) } : { ...box, x: straight + step * (w + GRID * 2) };
   }
 
+  // Same type keeps the look (fill, border, font…), even for a different shape.
+  const sameType = type === source.type && type !== "text";
   const style = Object.fromEntries(
-    NEIGHBOUR_STYLE_KEYS.filter((key) => sameKind && source[key] !== undefined).map((key) => [key, source[key]]),
+    NEIGHBOUR_STYLE_KEYS.filter((key) => sameType && key !== "shape" && source[key] !== undefined).map((key) => [key, source[key]]),
   );
-  const id = addNode(doc, type, { x: box.x, y: box.y, w, h, ...style, group: source.group ?? null });
+  const id = addNode(doc, type, {
+    x: box.x,
+    y: box.y,
+    w,
+    h,
+    ...style,
+    ...(shape ? { shape } : {}),
+    group: source.group ?? null,
+  });
   addEdge(doc, { source: sourceId, target: id, sourceHandle: side, targetHandle: OPPOSITE_SIDE[side] });
   return id;
 }

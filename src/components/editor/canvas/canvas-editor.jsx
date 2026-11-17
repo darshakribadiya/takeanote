@@ -116,6 +116,8 @@ function CanvasBoard({ noteId, doc, readOnly, ensurePersisted, onError }) {
   const pointer = useRef(null);
   const lastPaste = useRef({ key: null, count: 0 });
   const quickAddRef = useRef(null);
+  // The open "+" picker: { rect, id, side } (rect = the button, for anchoring).
+  const [quickPick, setQuickPick] = useState(null);
   const [find, setFind] = useState({ open: false, key: 0 });
   const search = useBoardSearch(doc, find.open);
 
@@ -479,10 +481,11 @@ function CanvasBoard({ noteId, doc, readOnly, ensurePersisted, onError }) {
 
   // ---- quick connect -------------------------------------------------------------
 
-  function quickAdd(sourceId, side) {
+  // What the "+" picker offers: { type, shape? }, or null for "Same as this".
+  function quickAdd(sourceId, side, choice = null) {
     if (readOnly) return;
     undoManager.stopCapturing();
-    const id = addNeighbour(doc, sourceId, side);
+    const id = addNeighbour(doc, sourceId, side, choice);
     if (!id) return;
     regroupByPosition(doc, [id]);
     noteFresh(id);
@@ -641,7 +644,9 @@ function CanvasBoard({ noteId, doc, readOnly, ensurePersisted, onError }) {
         editors.set(id, editor);
         return () => editors.get(id) === editor && editors.delete(id);
       },
-      quickAdd: (id, side) => quickAddRef.current?.(id, side),
+      // "+" beside an item: open the picker anchored to that button.
+      openQuickAdd: (button, id, side) =>
+        setQuickPick({ rect: button.getBoundingClientRect(), id, side }),
       renamingId,
       setRenamingId,
       // A node's own "⋯" button: select it and open its right-click menu there.
@@ -805,6 +810,13 @@ function CanvasBoard({ noteId, doc, readOnly, ensurePersisted, onError }) {
           />
         )}
 
+        <QuickAddMenu
+          onClose={() => setQuickPick(null)}
+          onPick={(choice) => quickAddRef.current?.(quickPick.id, quickPick.side, choice)}
+          pick={quickPick}
+          source={quickPick ? nodesMap(doc).get(quickPick.id) : null}
+        />
+
         <CanvasContextMenu
           board={board}
           doc={doc}
@@ -896,6 +908,70 @@ function imageSize(file) {
 }
 
 // ---------------------------------------------------------------------------
+
+const PICK_SIDES = { top: "top", bottom: "bottom", left: "left", right: "right" };
+
+/*
+ * The "+" picker: what to add on that side of an item, as a compact grid
+ * of icons (names show as tooltips and to screen readers). Top row: the
+ * same as this item, a text box, a sticky note; below: the flowchart
+ * shapes. Opens next to the "+" that was clicked.
+ */
+function QuickAddMenu({ pick, source, onPick, onClose }) {
+  const anchor = useMemo(
+    () => (pick ? { getBoundingClientRect: () => pick.rect } : null),
+    [pick],
+  );
+  const sameLabel =
+    source?.type === "shape"
+      ? `Same shape (${(SHAPES[source.shape] ?? SHAPES.process).label})`
+      : source?.type === "sticky"
+        ? "Same: sticky note"
+        : "Same: text";
+  const basics = [
+    { label: sameLabel, icon: "mdi:content-duplicate", choice: null },
+    { label: "Text", icon: "mdi:format-text", choice: { type: "text" } },
+    { label: "Sticky note", icon: "mdi:note-outline", choice: { type: "sticky" } },
+  ];
+  const shapes = Object.entries(SHAPES).map(([key, shape]) => ({
+    label: shape.label,
+    icon: shape.icon,
+    choice: { type: "shape", shape: key },
+  }));
+
+  return (
+    <Menu modal={false} onOpenChange={(open) => !open && onClose()} open={Boolean(pick)}>
+      {pick && (
+        <MenuPopup align="center" anchor={anchor} aria-label="Add a connected item" side={PICK_SIDES[pick.side] ?? "bottom"} sideOffset={6}>
+          <div className="grid grid-cols-3 gap-0.5">
+            {basics.map((item) => (
+              <PickIcon item={item} key={item.label} onPick={onPick} />
+            ))}
+          </div>
+          <MenuSeparator />
+          <div className="grid grid-cols-3 gap-0.5">
+            {shapes.map((item) => (
+              <PickIcon item={item} key={item.label} onPick={onPick} />
+            ))}
+          </div>
+        </MenuPopup>
+      )}
+    </Menu>
+  );
+}
+
+function PickIcon({ item, onPick }) {
+  return (
+    <MenuItem
+      aria-label={item.label}
+      className="size-9 min-h-0 justify-center p-0 sm:size-8 sm:min-h-0 [&>svg]:mx-0"
+      onClick={() => onPick(item.choice)}
+      title={item.label}
+    >
+      <Icon className="size-5" icon={item.icon} />
+    </MenuItem>
+  );
+}
 
 const TOOLS = [
   { type: "text", label: "Text", icon: "mdi:format-text", key: "T" },

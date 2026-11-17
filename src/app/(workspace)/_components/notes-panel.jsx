@@ -19,6 +19,7 @@ export const VIEW_LOOKS = {
   trash: { icon: "mdi:delete-outline", tone: "rose" },
   folder: { icon: "mdi:folder-outline", tone: "neutral" },
   tag: { icon: "mdi:tag-outline", tone: "neutral" },
+  unfiled: { icon: "mdi:file-document-multiple-outline", tone: "neutral" },
 };
 
 export const TONES = {

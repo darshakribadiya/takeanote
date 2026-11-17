@@ -46,7 +46,7 @@ import {
   renameNote,
 } from "@/lib/notes/api";
 import { useStore } from "@/lib/notes/store";
-import { countNotes, parseView, viewLabel } from "@/lib/notes/views";
+import { countNotes, parseView, selectNotes, viewLabel } from "@/lib/notes/views";
 import { cn } from "@/lib/utils";
 import { AccountMenu } from "./account-menu";
 import { NoteActionsMenu, NoteContextMenu } from "./note-actions";
@@ -54,32 +54,29 @@ import { lookFor, NotesPanel } from "./notes-panel";
 import { SidebarResizeHandle } from "./sidebar-resize";
 import { useWorkspace } from "./workspace";
 
-const PRIMARY_VIEWS = [
-  { view: "all", label: "All notes", icon: "mdi:note-multiple-outline" },
-  { view: "favorites", label: "Favorites", icon: "mdi:star-outline" },
-  { view: "recent", label: "Recent", icon: "mdi:clock-outline" },
-  { view: "shared", label: "Shared with me", icon: "mdi:account-multiple-outline" },
+// Expand in place: their notes list right under the row.
+const QUICK_VIEWS = [
+  { view: "favorites", label: "Favorites", icon: "mdi:star-outline", empty: "Star a note to keep it here." },
+  { view: "recent", label: "Recent", icon: "mdi:clock-outline", empty: "Notes you open show up here." },
+  { view: "shared", label: "Shared with me", icon: "mdi:account-multiple-outline", empty: "Notes people share with your email show up here." },
 ];
 
+// Switch the list at the bottom of the sidebar.
 const SECONDARY_VIEWS = [
   { view: "archive", label: "Archive", icon: "mdi:archive-outline" },
   { view: "trash", label: "Trash", icon: "mdi:delete-outline" },
 ];
 
 const EMPTY_TEXT = {
-  all: "No notes yet. Press N to start one.",
-  favorites: "Star a note to keep it here.",
-  recent: "Notes you open show up here.",
+  unfiled: "Notes outside folders show up here. Press N to start one.",
   archive: "Archived notes show up here.",
   trash: "Trash is empty.",
-  shared: "Notes people share with your email show up here.",
-  folder: "This folder is empty.",
-  tag: "No notes with this tag.",
 };
 
-// Folders and tags show this many rows until expanded.
-const PREVIEW_COUNT = 3;
+// Rows shown in an expanded section before "Show all".
+const NESTED_LIMIT = 8;
 const SECTIONS_KEY = "qn:sidebar-sections";
+const EXPANDED_KEY = "qn:sidebar-expanded";
 
 function readSections() {
   try {
@@ -89,17 +86,31 @@ function readSections() {
   }
 }
 
+// Rows the person expanded ("favorites", "folder:<id>", …). Everything starts collapsed.
+function readExpanded() {
+  try {
+    return new Set(JSON.parse(localStorage.getItem(EXPANDED_KEY) ?? "[]"));
+  } catch {
+    return new Set();
+  }
+}
+
 /*
- * The one sidebar: create and search, views, folders, tags and the notes
- * of the current view, each with its own actions menu. Resizable on
- * desktop; a slide-over sheet on phones.
+ * The one sidebar, laid out like a file tree:
  *
- * The content column grows with its rows and scrolls as one (h-auto); a
- * fixed height would squeeze the groups and let the notes list spill
- * under Archive / Trash on short screens.
+ *   All notes               opens the All notes page
+ *   ▸ Favorites / Recent / Shared with me   expand their notes in place
+ *   Folders  ▸ each folder (count) expands its notes
+ *   Tags     ▸ each tag (count) expands its notes
+ *   Notes    notes in no folder (or Archive / Trash when picked below)
+ *   Archive, Trash
+ *
+ * Expanded rows are independent and remembered. Going to a view from
+ * elsewhere (command palette, a tag chip) expands that row too.
+ * Resizable on desktop; a slide-over sheet on phones.
  */
 export function AppSidebar({ notes, width, onWidthChange }) {
-  const { view, setView, selectedId, selectNote, newNote, openPalette, openAllNotes, toast } = useWorkspace();
+  const { view, setView, selectedId, selectNote, newNote, openPalette, openAllNotes, page, toast } = useWorkspace();
   const { isMobile, setOpenMobile } = useSidebar();
   const status = useStore((s) => s.status);
   const allNotes = useStore((s) => s.notes);
@@ -109,16 +120,25 @@ export function AppSidebar({ notes, width, onWidthChange }) {
   const [creating, setCreating] = useState(null); // "folder" | "tag" | null
   const [renamingId, setRenamingId] = useState(null); // folder or note id
   const [sections, setSections] = useState(readSections);
+  const [expanded, setExpanded] = useState(readExpanded);
   const [confirmEmpty, setConfirmEmpty] = useState(false);
   const [shared, setShared] = useState(null);
   const { kind } = parseView(view);
+  // Archive and Trash take over the bottom list; otherwise it shows notes in no folder.
+  const panelKind = kind === "archive" || kind === "trash" ? kind : "unfiled";
 
   // Keep the open note in view as it changes (keyboard j/k, palette, links).
   useEffect(() => {
     if (selectedId) document.getElementById(`note-item-${selectedId}`)?.scrollIntoView({ block: "nearest" });
   }, [selectedId, view]);
 
-  // Notes shared with this email: loaded for the count, refreshed when the view opens.
+  // A view picked elsewhere (palette, tag chip) expands its row; bring that row into view.
+  useEffect(() => {
+    document.getElementById(`sidebar-row-${view}`)?.scrollIntoView({ block: "nearest" });
+  }, [view]);
+
+  // Notes shared with this email: loaded for the count, refreshed when that row opens.
+  const sharedOpen = expanded.has("shared") || view === "shared";
   useEffect(() => {
     if (status !== "ready") return;
     let cancelled = false;
@@ -128,25 +148,51 @@ export function AppSidebar({ notes, width, onWidthChange }) {
     return () => {
       cancelled = true;
     };
-  }, [status, kind]);
+  }, [status, sharedOpen]);
 
   const folders = useMemo(
     () => Object.values(folderMap).sort((a, b) => a.position - b.position || a.name.localeCompare(b.name)),
     [folderMap],
   );
   const tags = useMemo(() => Object.values(tagMap).sort((a, b) => a.name.localeCompare(b.name)), [tagMap]);
-  const counts = useMemo(() => {
-    const result = {};
-    const views = [
-      ...PRIMARY_VIEWS.map((item) => item.view),
-      "trash",
-      ...folders.map((folder) => `folder:${folder.id}`),
-      ...tags.map((tag) => `tag:${tag.id}`),
-    ];
-    for (const key of views) result[key] = countNotes(allNotes, key, noteTags);
-    result.shared = shared?.length ?? 0;
+
+  // Every list the tree can show, sorted like their views.
+  const lists = useMemo(() => {
+    const pick = (key) => selectNotes({ notes: allNotes, noteTags, view: key });
+    const result = { favorites: pick("favorites"), recent: pick("recent"), unfiled: pick("unfiled") };
+    for (const folder of folders) result[`folder:${folder.id}`] = pick(`folder:${folder.id}`);
+    for (const tag of tags) result[`tag:${tag.id}`] = pick(`tag:${tag.id}`);
     return result;
-  }, [allNotes, noteTags, folders, tags, shared]);
+  }, [allNotes, noteTags, folders, tags]);
+  const trashCount = useMemo(() => countNotes(allNotes, "trash", noteTags), [allNotes, noteTags]);
+  const panelNotes = panelKind === "unfiled" ? lists.unfiled : notes;
+
+  // A row is open when the person expanded it, or when it is the current view.
+  function isOpen(key) {
+    return expanded.has(key) || view === key;
+  }
+
+  function setOpen(key, open) {
+    setExpanded((current) => {
+      const next = new Set(current);
+      if (open) next.add(key);
+      else next.delete(key);
+      try {
+        localStorage.setItem(EXPANDED_KEY, JSON.stringify([...next]));
+      } catch {}
+      return next;
+    });
+    // Closing the current view's row lets it go back to the default.
+    if (!open && view === key) setView("all");
+  }
+
+  // Folders also become the current view while open, so new notes land in them.
+  function toggleFolder(folderId) {
+    const key = `folder:${folderId}`;
+    const open = !isOpen(key);
+    setOpen(key, open);
+    if (open) setView(key);
+  }
 
   function go(nextView) {
     setView(nextView);
@@ -184,8 +230,15 @@ export function AppSidebar({ notes, width, onWidthChange }) {
     const type = creating;
     setCreating(null);
     if (!name.trim()) return;
-    if (type === "folder") run(async () => go(`folder:${(await createFolder(name)).id}`), "Couldn't create folder");
-    else run(async () => go(`tag:${(await createTag(name)).id}`), "Couldn't create tag");
+    if (type === "folder") {
+      run(async () => {
+        const folder = await createFolder(name);
+        setOpen(`folder:${folder.id}`, true);
+        go(`folder:${folder.id}`);
+      }, "Couldn't create folder");
+    } else {
+      run(async () => setOpen(`tag:${(await createTag(name)).id}`, true), "Couldn't create tag");
+    }
   }
 
   function startCreating(type) {
@@ -199,6 +252,33 @@ export function AppSidebar({ notes, width, onWidthChange }) {
       await emptyTrash();
       toast.add({ title: "Trash emptied", type: "success" });
     }, "Couldn't empty trash");
+  }
+
+  /*
+   * One note row. `anchor` marks the note's home row (its folder, or the
+   * bottom list), the one scrolled to when the note opens; the same note
+   * can also show under Favorites, Recent or a tag.
+   */
+  function renderNote(note, { compact = false, anchor = false, showTime = null } = {}) {
+    return (
+      <NoteRow
+        active={note.id === selectedId}
+        anchor={anchor}
+        compact={compact}
+        key={note.id}
+        note={note}
+        onOpen={() => open(note.id)}
+        onRename={() => setRenamingId(note.id)}
+        onRenameDone={(title) => {
+          setRenamingId(null);
+          if (title !== null && title.trim() !== noteTitle(note)) {
+            run(() => renameNote(note, title), "Couldn't rename note");
+          }
+        }}
+        renaming={renamingId === note.id}
+        showTime={showTime}
+      />
+    );
   }
 
   return (
@@ -242,112 +322,159 @@ export function AppSidebar({ notes, width, onWidthChange }) {
       <SidebarContent className="h-auto min-h-full">
         <SidebarGroup>
           <SidebarMenu>
-            {PRIMARY_VIEWS.map((item) => (
-              <ViewItem
-                active={view === item.view}
-                count={counts[item.view]}
-                item={item}
+            <ViewItem
+              active={page === "notes"}
+              item={{ view: "all", label: "All notes", icon: "mdi:note-multiple-outline" }}
+              onSelect={showAllNotes}
+            />
+            {QUICK_VIEWS.map((item) => (
+              <TreeRow
+                className={cn(view === item.view && lookFor(item.view).active)}
+                count={item.view === "recent" ? 0 : item.view === "shared" ? (shared?.length ?? 0) : lists[item.view].length}
+                icon={item.icon}
+                id={`sidebar-row-${item.view}`}
                 key={item.view}
-                // "All notes" opens the overview page; the other views filter the list below.
-                onSelect={item.view === "all" ? showAllNotes : go}
-              />
+                label={item.label}
+                onOpenChange={(value) => setOpen(item.view, value)}
+                open={isOpen(item.view)}
+              >
+                {item.view === "shared" ? (
+                  <SidebarMenu>
+                    <SharedRows emptyText={item.empty} notes={shared} />
+                  </SidebarMenu>
+                ) : (
+                  <NestedNotes
+                    emptyText={item.empty}
+                    notes={lists[item.view]}
+                    renderRow={(note) =>
+                      renderNote(note, { compact: true, showTime: item.view === "recent" ? note.last_accessed_at : null })
+                    }
+                  />
+                )}
+              </TreeRow>
             ))}
           </SidebarMenu>
         </SidebarGroup>
 
-        <CollapsibleSection
+        <TreeSection
           addLabel="New folder"
           emptyHint={
-            <SidebarMenuButton className="text-muted-foreground" onClick={() => startCreating("folder")} size="sm">
-              <Icon icon="mdi:folder-plus-outline" />
-              Create a folder
-            </SidebarMenuButton>
+            <SidebarMenuItem>
+              <SidebarMenuButton className="text-muted-foreground" onClick={() => startCreating("folder")} size="sm">
+                <Icon icon="mdi:folder-plus-outline" />
+                Create a folder
+              </SidebarMenuButton>
+            </SidebarMenuItem>
           }
           extra={creating === "folder" && <NameInput onDone={submitNew} placeholder="Folder name" />}
-          items={folders}
+          hasItems={folders.length > 0}
           onAdd={() => startCreating("folder")}
           onOpenChange={(value) => toggleSection("folders", value)}
           open={sections.folders}
           title="Folders"
-          renderItem={(folder) =>
-            renamingId === folder.id ? (
-              <NameInput
-                defaultValue={folder.name}
-                onDone={(name) => {
-                  setRenamingId(null);
-                  if (name.trim() && name.trim() !== folder.name) run(() => renameFolder(folder, name), "Couldn't rename folder");
-                }}
-              />
-            ) : (
-              <>
-                <SidebarMenuButton
-                  isActive={view === `folder:${folder.id}`}
-                  onClick={() => go(`folder:${folder.id}`)}
-                  onDoubleClick={() => setRenamingId(folder.id)}
-                >
-                  <Icon icon="mdi:folder-outline" />
-                  <span className="truncate">{folder.name}</span>
-                </SidebarMenuButton>
-                <ItemMenu
-                  count={counts[`folder:${folder.id}`]}
-                  items={[
-                    { label: "Rename", icon: "mdi:pencil-outline", onClick: () => setRenamingId(folder.id) },
-                    {
-                      label: "Delete folder",
-                      icon: "mdi:delete-outline",
-                      destructive: true,
-                      onClick: () => {
-                        if (view === `folder:${folder.id}`) go("all");
-                        run(async () => {
-                          await deleteFolder(folder);
-                          toast.add({ title: `Deleted “${folder.name}”`, description: "Its notes moved to All notes." });
-                        }, "Couldn't delete folder");
-                      },
+        >
+          {folders.map((folder) => {
+            const key = `folder:${folder.id}`;
+            if (renamingId === folder.id) {
+              return (
+                <SidebarMenuItem key={folder.id}>
+                  <NameInput
+                    defaultValue={folder.name}
+                    onDone={(name) => {
+                      setRenamingId(null);
+                      if (name.trim() && name.trim() !== folder.name) run(() => renameFolder(folder, name), "Couldn't rename folder");
+                    }}
+                  />
+                </SidebarMenuItem>
+              );
+            }
+            return (
+              <TreeRow
+                active={view === key}
+                count={lists[key]?.length ?? 0}
+                icon={isOpen(key) ? "mdi:folder-open-outline" : "mdi:folder-outline"}
+                id={`sidebar-row-${key}`}
+                key={folder.id}
+                label={folder.name}
+                menu={[
+                  { label: "New note here", icon: "mdi:note-plus-outline", onClick: () => newNote({ folderId: folder.id }) },
+                  { label: "Rename", icon: "mdi:pencil-outline", onClick: () => setRenamingId(folder.id) },
+                  {
+                    label: "Delete folder",
+                    icon: "mdi:delete-outline",
+                    destructive: true,
+                    onClick: () => {
+                      if (view === key) go("all");
+                      setOpen(key, false);
+                      run(async () => {
+                        await deleteFolder(folder);
+                        toast.add({ title: `Deleted “${folder.name}”`, description: "Its notes moved out of the folder." });
+                      }, "Couldn't delete folder");
                     },
-                  ]}
+                  },
+                ]}
+                onOpenChange={() => toggleFolder(folder.id)}
+                open={isOpen(key)}
+              >
+                <NestedNotes
+                  emptyText="This folder is empty."
+                  notes={lists[key] ?? []}
+                  renderRow={(note) => renderNote(note, { compact: true, anchor: true })}
                 />
-              </>
-            )
-          }
-        />
+              </TreeRow>
+            );
+          })}
+        </TreeSection>
 
-        <CollapsibleSection
+        <TreeSection
           addLabel="New tag"
           emptyHint={<p className="px-2 py-1 text-xs text-muted-foreground">Add tags from any note.</p>}
           extra={creating === "tag" && <NameInput onDone={submitNew} placeholder="Tag name" />}
-          items={tags}
+          hasItems={tags.length > 0}
           onAdd={() => startCreating("tag")}
           onOpenChange={(value) => toggleSection("tags", value)}
           open={sections.tags}
           title="Tags"
-          renderItem={(tag) => (
-            <>
-              <SidebarMenuButton isActive={view === `tag:${tag.id}`} onClick={() => go(`tag:${tag.id}`)}>
-                <Icon icon="mdi:tag-outline" />
-                <span className="truncate">{tag.name}</span>
-              </SidebarMenuButton>
-              <ItemMenu
-                count={counts[`tag:${tag.id}`]}
-                items={[
+        >
+          {tags.map((tag) => {
+            const key = `tag:${tag.id}`;
+            return (
+              <TreeRow
+                active={view === key}
+                count={lists[key]?.length ?? 0}
+                icon="mdi:tag-outline"
+                id={`sidebar-row-${key}`}
+                key={tag.id}
+                label={tag.name}
+                menu={[
                   {
                     label: "Delete tag",
                     icon: "mdi:delete-outline",
                     destructive: true,
                     onClick: () => {
-                      if (view === `tag:${tag.id}`) go("all");
+                      if (view === key) go("all");
+                      setOpen(key, false);
                       run(() => deleteTag(tag), "Couldn't delete tag");
                     },
                   },
                 ]}
-              />
-            </>
-          )}
-        />
+                onOpenChange={(value) => setOpen(key, value)}
+                open={isOpen(key)}
+              >
+                <NestedNotes
+                  emptyText="No notes with this tag."
+                  notes={lists[key] ?? []}
+                  renderRow={(note) => renderNote(note, { compact: true })}
+                />
+              </TreeRow>
+            );
+          })}
+        </TreeSection>
 
         <NotesPanel
           actions={
-            kind === "trash" &&
-            notes.length > 0 && (
+            panelKind === "trash" &&
+            panelNotes.length > 0 && (
               <button
                 className="rounded px-1.5 py-0.5 text-xs text-destructive-foreground hover:bg-destructive/8"
                 onClick={() => setConfirmEmpty(true)}
@@ -357,36 +484,15 @@ export function AppSidebar({ notes, width, onWidthChange }) {
               </button>
             )
           }
-          count={kind === "shared" ? counts.shared : notes.length}
-          emptyText={EMPTY_TEXT[kind]}
-          kind={kind}
-          label={viewLabel(view, { folders: folderMap, tags: tagMap })}
-          loading={kind !== "shared" && status === "booting"}
-          notes={notes}
-          onClear={kind === "all" ? undefined : () => go("all")}
-          renderRow={(note) => (
-            <NoteRow
-              active={note.id === selectedId}
-              key={note.id}
-              note={note}
-              onOpen={() => open(note.id)}
-              onRename={() => setRenamingId(note.id)}
-              onRenameDone={(title) => {
-                setRenamingId(null);
-                if (title !== null && title.trim() !== noteTitle(note)) {
-                  run(() => renameNote(note, title), "Couldn't rename note");
-                }
-              }}
-              renaming={renamingId === note.id}
-              showTime={kind === "trash" ? note.deleted_at : kind === "recent" ? note.last_accessed_at : null}
-            />
-          )}
-          rows={
-            kind === "shared" && (
-              <SidebarMenu>
-                <SharedRows emptyText={EMPTY_TEXT.shared} notes={shared} />
-              </SidebarMenu>
-            )
+          count={panelNotes.length}
+          emptyText={EMPTY_TEXT[panelKind]}
+          kind={panelKind}
+          label={viewLabel(panelKind, { folders: folderMap, tags: tagMap })}
+          loading={status === "booting"}
+          notes={panelNotes}
+          onClear={panelKind === "unfiled" ? undefined : () => go("all")}
+          renderRow={(note) =>
+            renderNote(note, { anchor: true, showTime: panelKind === "trash" ? note.deleted_at : null })
           }
         />
 
@@ -395,7 +501,7 @@ export function AppSidebar({ notes, width, onWidthChange }) {
             {SECONDARY_VIEWS.map((item) => (
               <ViewItem
                 active={view === item.view}
-                count={item.view === "trash" ? counts.trash : undefined}
+                count={item.view === "trash" ? trashCount : undefined}
                 item={item}
                 key={item.view}
                 onSelect={go}
@@ -414,7 +520,7 @@ export function AppSidebar({ notes, width, onWidthChange }) {
           <AlertDialogHeader>
             <AlertDialogTitle>Empty trash?</AlertDialogTitle>
             <AlertDialogDescription>
-              {notes.length} {notes.length === 1 ? "note" : "notes"} will be deleted forever. This can’t be undone.
+              {panelNotes.length} {panelNotes.length === 1 ? "note" : "notes"} will be deleted forever. This can’t be undone.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -429,16 +535,8 @@ export function AppSidebar({ notes, width, onWidthChange }) {
   );
 }
 
-/*
- * Folders / Tags: the header collapses the section. Open, it lists the
- * first PREVIEW_COUNT rows and "Show N more" reveals the rest.
- */
-function CollapsibleSection({ title, open, onOpenChange, items, renderItem, onAdd, addLabel, extra, emptyHint }) {
-  const [showAll, setShowAll] = useState(false);
-  const hidden = Math.max(0, items.length - PREVIEW_COUNT);
-  const limited = !showAll && hidden > 0;
-  const visible = limited ? items.slice(0, PREVIEW_COUNT) : items;
-
+// Folders / Tags: the header collapses the whole section; "+" adds one.
+function TreeSection({ title, open, onOpenChange, hasItems, onAdd, addLabel, extra, emptyHint, children }) {
   return (
     <SidebarGroup>
       <SidebarGroupLabel
@@ -453,7 +551,6 @@ function CollapsibleSection({ title, open, onOpenChange, items, renderItem, onAd
       >
         <Icon className={cn("size-3.5 transition-transform", !open && "-rotate-90")} icon="mdi:chevron-down" />
         {title}
-        {!open && items.length > 0 && <span className="ms-1 tabular-nums opacity-70">{items.length}</span>}
       </SidebarGroupLabel>
       <SidebarGroupAction aria-label={addLabel} onClick={onAdd} title={addLabel}>
         <Icon icon="mdi:plus" />
@@ -461,31 +558,63 @@ function CollapsibleSection({ title, open, onOpenChange, items, renderItem, onAd
       {open && (
         <SidebarGroupContent>
           <SidebarMenu>
-            {visible.map((item) => (
-              <SidebarMenuItem key={item.id}>
-                {renderItem(item)}
-              </SidebarMenuItem>
-            ))}
+            {children}
             {extra && <SidebarMenuItem>{extra}</SidebarMenuItem>}
-            {!items.length && !extra && <SidebarMenuItem>{emptyHint}</SidebarMenuItem>}
+            {!hasItems && !extra && emptyHint}
           </SidebarMenu>
-          {hidden > 0 && (
-            <button
-              className="mt-0.5 flex w-full items-center gap-1 rounded-md px-2 py-1 text-xs text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
-              onClick={() => setShowAll((value) => !value)}
-              type="button"
-            >
-              <Icon className="size-3.5" icon={showAll ? "mdi:chevron-up" : "mdi:chevron-down"} />
-              {showAll ? "Show less" : `Show ${hidden} more`}
-            </button>
-          )}
         </SidebarGroupContent>
       )}
     </SidebarGroup>
   );
 }
 
-function NoteRow({ note, active, renaming, showTime, onOpen, onRename, onRenameDone }) {
+/*
+ * An expandable tree row: chevron, icon, label and count (the count
+ * swaps to a "⋯" menu on hover when there is one). Open, its children
+ * show indented under it.
+ */
+function TreeRow({ id, icon, label, count, open, onOpenChange, active, menu, className, children }) {
+  return (
+    <SidebarMenuItem id={id}>
+      <SidebarMenuButton
+        aria-expanded={open}
+        className={className}
+        isActive={active}
+        onClick={() => onOpenChange(!open)}
+      >
+        <Icon className={cn("size-3.5! shrink-0 text-muted-foreground transition-transform", open && "rotate-90")} icon="mdi:chevron-right" />
+        <Icon icon={icon} />
+        <span className="truncate">{label}</span>
+      </SidebarMenuButton>
+      {menu ? <ItemMenu count={count} items={menu} /> : count > 0 && <SidebarMenuBadge>{count}</SidebarMenuBadge>}
+      {open && <div className="ms-3.5 border-s border-sidebar-border py-0.5 ps-1">{children}</div>}
+    </SidebarMenuItem>
+  );
+}
+
+// Notes inside an open row: the first NESTED_LIMIT, then "Show all N".
+function NestedNotes({ notes, emptyText, renderRow }) {
+  const [showAll, setShowAll] = useState(false);
+  if (!notes.length) return <p className="px-2 py-1.5 text-xs text-muted-foreground">{emptyText}</p>;
+  const shown = showAll ? notes : notes.slice(0, NESTED_LIMIT);
+  return (
+    <>
+      <SidebarMenu>{shown.map(renderRow)}</SidebarMenu>
+      {notes.length > NESTED_LIMIT && (
+        <button
+          className="mt-0.5 flex w-full items-center gap-1 rounded-md px-2 py-1 text-xs text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+          onClick={() => setShowAll((value) => !value)}
+          type="button"
+        >
+          <Icon className="size-3.5" icon={showAll ? "mdi:chevron-up" : "mdi:chevron-down"} />
+          {showAll ? "Show less" : `Show all ${notes.length}`}
+        </button>
+      )}
+    </>
+  );
+}
+
+function NoteRow({ note, active, renaming, showTime, compact, anchor, onOpen, onRename, onRenameDone }) {
   if (renaming) {
     return (
       <SidebarMenuItem>
@@ -501,40 +630,51 @@ function NoteRow({ note, active, renaming, showTime, onOpen, onRename, onRenameD
 
   const time = showTime ?? note.content_updated_at;
   // The first lines after the title, so similar titles are easy to tell apart.
-  const preview = notePreview(note);
+  const preview = compact ? "" : notePreview(note);
   return (
     <SidebarMenuItem>
       <NoteContextMenu note={note} onRename={onRename}>
         <SidebarMenuButton
           aria-current={active ? "true" : undefined}
-          className="h-auto py-1.5 pe-8"
-          id={`note-item-${note.id}`}
+          className={compact ? "pe-8" : "h-auto py-1.5 pe-8"}
+          id={anchor ? `note-item-${note.id}` : undefined}
           isActive={active}
           onClick={onOpen}
           onDoubleClick={() => !note.deleted_at && onRename()}
+          title={compact ? `${noteTitle(note)} · ${relativeTime(time)}` : undefined}
         >
           <Icon
-            className="mt-0.5 self-start text-muted-foreground"
+            className={cn("text-muted-foreground", !compact && "mt-0.5 self-start")}
             icon={note.kind === "canvas" ? "mdi:vector-square" : "mdi:file-document-outline"}
           />
-          <span className="flex min-w-0 flex-1 flex-col gap-0.5">
-            <span className="flex items-center gap-1">
-              <span className="min-w-0 flex-1 truncate font-medium">{noteTitle(note)}</span>
+          {compact ? (
+            <span className="flex min-w-0 flex-1 items-center gap-1">
+              <span className="min-w-0 flex-1 truncate">{noteTitle(note)}</span>
               {note.is_pinned && <Icon className="size-3.5! shrink-0 text-primary-500" icon="mdi:pin-outline" />}
-              {note.is_favorite && <Icon className="size-3.5! shrink-0 text-secondary-500" icon="mdi:star-outline" />}
+              {showTime && <span className="shrink-0 text-[0.7rem] text-muted-foreground/80">{relativeTime(time)}</span>}
             </span>
-            {preview && <span className="truncate text-xs text-muted-foreground">{preview}</span>}
-            <time className="text-[0.7rem] text-muted-foreground/80" dateTime={time}>
-              {relativeTime(time)}
-            </time>
-          </span>
+          ) : (
+            <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+              <span className="flex items-center gap-1">
+                <span className="min-w-0 flex-1 truncate font-medium">{noteTitle(note)}</span>
+                {note.is_pinned && <Icon className="size-3.5! shrink-0 text-primary-500" icon="mdi:pin-outline" />}
+                {note.is_favorite && <Icon className="size-3.5! shrink-0 text-secondary-500" icon="mdi:star-outline" />}
+              </span>
+              {preview && <span className="truncate text-xs text-muted-foreground">{preview}</span>}
+              <time className="text-[0.7rem] text-muted-foreground/80" dateTime={time}>
+                {relativeTime(time)}
+              </time>
+            </span>
+          )}
         </SidebarMenuButton>
       </NoteContextMenu>
       <NoteActionsMenu
         note={note}
         onRename={onRename}
         trigger={
-          <MenuTrigger render={<SidebarMenuAction aria-label={`Actions for ${noteTitle(note)}`} className="top-2" showOnHover />}>
+          <MenuTrigger
+            render={<SidebarMenuAction aria-label={`Actions for ${noteTitle(note)}`} className={compact ? undefined : "top-2"} showOnHover />}
+          >
             <Icon icon="mdi:dots-horizontal" />
           </MenuTrigger>
         }
@@ -545,7 +685,7 @@ function NoteRow({ note, active, renaming, showTime, onOpen, onRename, onRenameD
 
 function ViewItem({ item, active, count, onSelect }) {
   return (
-    <SidebarMenuItem>
+    <SidebarMenuItem id={`sidebar-row-${item.view}`}>
       <SidebarMenuButton className={cn(active && lookFor(item.view).active)} isActive={active} onClick={() => onSelect(item.view)}>
         <Icon icon={item.icon} />
         <span>{item.label}</span>

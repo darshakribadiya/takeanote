@@ -415,7 +415,7 @@ export function SidebarContent(
     <ScrollArea className="min-h-0 flex-1" fill overscrollContain scrollFade>
       <div
         className={cn(
-          "flex h-full flex-col gap-2 group-data-[collapsible=icon]:overflow-hidden",
+          "flex h-full flex-col group-data-[collapsible=icon]:overflow-hidden",
           className,
         )}
         data-sidebar="content"

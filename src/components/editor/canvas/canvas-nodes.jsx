@@ -28,12 +28,13 @@ function Handles() {
 }
 
 /*
- * "+" buttons just outside each side of an item: click one to add a
- * connected item of the same kind on that side (see addNeighbour).
+ * "+" buttons just outside each side of an item: click one to pick what
+ * to add on that side (same kind, text, sticky or a flowchart shape); it
+ * appears joined by an arrow (see addNeighbour and QuickAddMenu).
  */
 function QuickConnect({ id }) {
-  const { readOnly, editingId, quickAdd } = use(CanvasContext);
-  if (readOnly || !quickAdd || editingId === id) return null;
+  const { readOnly, editingId, openQuickAdd } = use(CanvasContext);
+  if (readOnly || !openQuickAdd || editingId === id) return null;
   return SIDES.map((side) => (
     <button
       aria-label={`Add connected item ${side === Position.Top ? "above" : side === Position.Bottom ? "below" : `to the ${side}`}`}
@@ -42,7 +43,7 @@ function QuickConnect({ id }) {
       key={side}
       onClick={(event) => {
         event.stopPropagation();
-        quickAdd(id, side);
+        openQuickAdd(event.currentTarget, id, side);
       }}
       onDoubleClick={(event) => event.stopPropagation()}
       title="Add a connected item"

@@ -2,7 +2,7 @@
 /*
  * A view is a string so it can live in the URL and localStorage.
  * Examples: "all", "favorites", "recent", "shared", "archive", "trash",
- * "folder:<uuid>", "tag:<uuid>"
+ * "folder:<uuid>", "tag:<uuid>", "unfiled" (notes in no folder)
  */
 export const DEFAULT_VIEW = "all";
 const RECENT_LIMIT = 30;
@@ -23,6 +23,7 @@ export function viewLabel(view, { folders, tags }) {
     shared: "Shared with me",
     archive: "Archive",
     trash: "Trash",
+    unfiled: "Notes",
   }[kind];
 }
 
@@ -47,6 +48,8 @@ function belongsToView(note, { kind, id }, noteTags) {
       return isLive(note) && note.folder_id === id;
     case "tag":
       return isLive(note) && (noteTags[note.id] ?? []).includes(id);
+    case "unfiled":
+      return isLive(note) && !note.folder_id;
     default:
       return isLive(note);
   }

@@ -186,12 +186,12 @@ export function Workspace() {
     if (location.pathname !== "/notes") history.pushState(null, "", "/notes");
   }
 
-  // kind: "document" (paper) or "canvas" (free-form board)
-  function newNote({ content = "", title = "", kind: noteKind = "document" } = {}) {
+  // kind: "document" (paper) or "canvas" (free-form board); folderId overrides the current folder view.
+  function newNote({ content = "", title = "", kind: noteKind = "document", folderId } = {}) {
     const { kind, id } = parseView(view);
     const note = createLocalNote({
       kind: noteKind,
-      folderId: kind === "folder" ? id : null,
+      folderId: folderId !== undefined ? folderId : kind === "folder" ? id : null,
       isFavorite: kind === "favorites",
     });
     if (content || title) initialTexts.current.set(note.id, { content, title });
