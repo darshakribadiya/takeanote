@@ -45,6 +45,7 @@ function shortcutAreas() {
             ["Favorite", [alt, "F"]],
             ["Share", [alt, "S"]],
             ["Print or save as PDF", [mod, "P"]],
+            ["Focus mode (full screen)", [mod, "Shift", "F"]],
             ["Move to Trash", [mod, "Shift", "⌫"]],
           ],
         },
@@ -63,6 +64,7 @@ function shortcutAreas() {
             ["Strikethrough", [mod, "Shift", "S"]],
             ["Inline code", [mod, "E"]],
             ["Hidden text", [mod, "Shift", "H"]],
+            ["Comment on selection", [mod, alt, "M"]],
           ],
         },
         {
@@ -71,6 +73,8 @@ function shortcutAreas() {
             ["Insert a block", ["/"]],
             ["Indent / outdent", ["Tab"], ["Shift", "Tab"]],
             ["Page break", [mod, "Enter"]],
+            ["Move block up / down", [alt, "↑"], [alt, "↓"]],
+            ["Duplicate block", [mod, "D"]],
             ["Undo / redo", [mod, "Z"], [mod, "Shift", "Z"]],
           ],
         },
@@ -79,6 +83,7 @@ function shortcutAreas() {
           items: [
             ["Zoom in / out", [mod, "+"], [mod, "−"]],
             ["Fit to window", [mod, "0"]],
+            ["Find / find & replace", [mod, "F"], [mod, "H"]],
           ],
         },
       ],
@@ -95,12 +100,15 @@ function shortcutAreas() {
             ["Group", ["G"]],
             ["Process / decision shape", ["R"], ["D"]],
             ["Text where you click", ["Double-click"]],
+            ["Find on the board", [mod, "F"]],
+            ["Drag without alignment guides", [alt, "Drag"]],
           ],
         },
         {
           title: "Selection",
           items: [
             ["Edit text", ["Enter"]],
+            ["Copy / cut / paste", [mod, "C"], [mod, "X"], [mod, "V"]],
             ["Duplicate", [mod, "D"]],
             ["Group / ungroup", [mod, "G"], [mod, "Shift", "G"]],
             ["Lock / unlock", [mod, "Shift", "L"]],

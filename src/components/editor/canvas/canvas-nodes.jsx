@@ -27,6 +27,32 @@ function Handles() {
   return SIDES.map((side) => <Handle className="canvas-handle" id={side} key={side} position={side} type="source" />);
 }
 
+/*
+ * "+" buttons just outside each side of an item: click one to add a
+ * connected item of the same kind on that side (see addNeighbour).
+ */
+function QuickConnect({ id }) {
+  const { readOnly, editingId, quickAdd } = use(CanvasContext);
+  if (readOnly || !quickAdd || editingId === id) return null;
+  return SIDES.map((side) => (
+    <button
+      aria-label={`Add connected item ${side === Position.Top ? "above" : side === Position.Bottom ? "below" : `to the ${side}`}`}
+      className="canvas-quick-add nodrag nopan"
+      data-side={side}
+      key={side}
+      onClick={(event) => {
+        event.stopPropagation();
+        quickAdd(id, side);
+      }}
+      onDoubleClick={(event) => event.stopPropagation()}
+      title="Add a connected item"
+      type="button"
+    >
+      <Icon icon="mdi:plus" />
+    </button>
+  ));
+}
+
 function Resizer({ selected, locked, keepAspectRatio, minWidth = 80, minHeight = 40, onResizeStart, onResizeEnd }) {
   const { readOnly } = use(CanvasContext);
   return (
@@ -107,6 +133,7 @@ export function TextNode({ id, data, selected }) {
       />
       <LockBadge locked={data.locked} selected={selected} />
       <Handles />
+      <QuickConnect id={id} />
       <CanvasText
         doc={doc}
         editing={editing}
@@ -139,6 +166,7 @@ export function StickyNode({ id, data, selected }) {
       <Resizer locked={data.locked} minHeight={80} minWidth={80} selected={selected} />
       <LockBadge locked={data.locked} selected={selected} />
       <Handles />
+      <QuickConnect id={id} />
       <CanvasText
         className="text-stone-900"
         doc={doc}
@@ -154,16 +182,25 @@ export function StickyNode({ id, data, selected }) {
   );
 }
 
+/*
+ * A group: a labelled frame behind its members. Only the label and a thin
+ * band along the border catch the pointer (hover outline, click to
+ * select, drag to move); the inside stays click-through so the board and
+ * the members underneath work as usual. "⋯" opens the group's menu.
+ */
 export function FrameNode({ id, data, selected }) {
-  const { doc, readOnly } = use(CanvasContext);
-  const [renaming, setRenaming] = useState(false);
+  const { doc, readOnly, renamingId, setRenamingId, openNodeMenu } = use(CanvasContext);
+  const renaming = renamingId === id;
   return (
     <div
       className={cn("canvas-frame pointer-events-none relative h-full w-full", selected && "canvas-frame-selected")}
       style={boxStyle(data.style)}
     >
       <Resizer locked={data.locked} minHeight={120} minWidth={160} selected={selected} />
-      <div className="frame-handle pointer-events-auto absolute -top-8 left-0 flex h-7 max-w-full cursor-grab items-center gap-1.5 rounded-md px-1.5 text-sm text-muted-foreground active:cursor-grabbing">
+      {SIDES.map((side) => (
+        <span aria-hidden="true" className="frame-handle frame-edge" data-side={side} key={side} />
+      ))}
+      <div className="frame-handle frame-label absolute -top-8 left-0 flex h-7 max-w-full items-center gap-1.5 rounded-md ps-1.5 pe-0.5 text-sm text-muted-foreground">
         <Icon className="size-4 shrink-0" icon={data.locked ? "mdi:lock-outline" : "mdi:group"} />
         {renaming ? (
           <input
@@ -173,42 +210,66 @@ export function FrameNode({ id, data, selected }) {
             defaultValue={data.label}
             onBlur={(event) => {
               updateNodes(doc, { [id]: { label: event.target.value.trim() || "Group" } });
-              setRenaming(false);
+              setRenamingId(null);
             }}
+            onFocus={(event) => event.currentTarget.select()}
             onKeyDown={(event) => {
-              if (event.key === "Enter" || event.key === "Escape") event.currentTarget.blur();
+              if (event.key === "Enter") event.currentTarget.blur();
+              if (event.key === "Escape") {
+                event.currentTarget.value = data.label ?? "";
+                event.currentTarget.blur();
+              }
             }}
           />
         ) : (
-          <span className="truncate" onDoubleClick={() => !readOnly && setRenaming(true)}>
+          <span className="truncate pe-1" onDoubleClick={() => !readOnly && setRenamingId(id)} title="Double-click to rename">
             {data.label || "Group"}
           </span>
+        )}
+        {!readOnly && !renaming && (
+          <button
+            aria-label="Group options"
+            className="frame-menu nodrag inline-flex size-6 shrink-0 items-center justify-center rounded hover:bg-background hover:text-foreground"
+            onClick={(event) => {
+              event.stopPropagation();
+              openNodeMenu?.(event, id);
+            }}
+            title="Group options"
+            type="button"
+          >
+            <Icon className="size-4" icon="mdi:dots-horizontal" />
+          </button>
         )}
       </div>
     </div>
   );
 }
 
-export function ImageNode({ data, selected }) {
+export function ImageNode({ id, data, selected }) {
   return (
-    <div className="canvas-node relative h-full w-full overflow-hidden bg-muted shadow-sm/5" style={boxStyle(data.style)}>
+    <div className="canvas-node relative h-full w-full bg-muted shadow-sm/5" style={boxStyle(data.style)}>
       <Resizer keepAspectRatio locked={data.locked} selected={selected} />
       <LockBadge locked={data.locked} selected={selected} />
       <Handles />
+      <QuickConnect id={id} />
       {data.src && (
-        // eslint-disable-next-line @next/next/no-img-element -- private storage redirect, not optimisable
-        <img alt={data.name ?? ""} className="pointer-events-none h-full w-full object-cover select-none" draggable={false} src={data.src} />
+        // Clipped in its own box so the "+" buttons outside the image stay visible.
+        <div className="pointer-events-none absolute inset-0 overflow-hidden" style={{ borderRadius: "inherit" }}>
+          {/* eslint-disable-next-line @next/next/no-img-element -- private storage redirect, not optimisable */}
+          <img alt={data.name ?? ""} className="h-full w-full object-cover select-none" draggable={false} src={data.src} />
+        </div>
       )}
     </div>
   );
 }
 
-export function FileNode({ data, selected }) {
+export function FileNode({ id, data, selected }) {
   return (
     <div className="canvas-node relative flex h-full w-full items-center gap-3 p-3 shadow-sm/5" style={boxStyle(data.style)}>
       <Resizer locked={data.locked} minHeight={56} minWidth={180} selected={selected} />
       <LockBadge locked={data.locked} selected={selected} />
       <Handles />
+      <QuickConnect id={id} />
       <span className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground">
         <Icon className="size-5" icon="mdi:file-outline" />
       </span>
@@ -252,6 +313,7 @@ export function ShapeNode({ id, data, selected, width, height }) {
       <Resizer locked={data.locked} minHeight={32} minWidth={48} selected={selected} />
       <LockBadge locked={data.locked} selected={selected} />
       <Handles />
+      <QuickConnect id={id} />
       <div className="absolute" style={{ inset: `${inset.y}px ${inset.x}px` }}>
         <CanvasText
           doc={doc}

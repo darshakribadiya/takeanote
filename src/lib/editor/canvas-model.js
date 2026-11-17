@@ -362,11 +362,16 @@ export function patchBorder(doc, ids, borderPatch) {
   );
 }
 
-export function removeElements(doc, { nodeIds = [], edgeIds = [] }) {
+/*
+ * `track: false` leaves the change out of undo (used to tidy away an empty
+ * text box whose creation was also dropped from the undo stack).
+ */
+export function removeElements(doc, { nodeIds = [], edgeIds = [] }, { track = true } = {}) {
   const nodes = nodesMap(doc);
   const edges = edgesMap(doc);
   const removedNodes = new Set(nodeIds);
-  transact(doc, () => {
+  const run = track ? (fn) => transact(doc, fn) : (fn) => doc.transact(fn);
+  run(() => {
     nodeIds.forEach((id) => nodes.delete(id));
     edgeIds.forEach((id) => edges.delete(id));
     // Edges never outlive the nodes they connect.
@@ -417,6 +422,12 @@ export function alignNodes(doc, ids, mode) {
       }[mode];
     }
   }
+  // An aligned group carries its members along, like dragging it does.
+  const movedFrames = {};
+  for (const node of items) {
+    if (isFrame(node) && patches[node.id]) movedFrames[node.id] = { x: node.x, y: node.y, ...patches[node.id] };
+  }
+  Object.assign(patches, memberPatches(doc, movedFrames, new Set(Object.keys(patches))));
   updateNodes(doc, patches);
 }
 
@@ -626,6 +637,40 @@ export function layerName(doc, id, value) {
  * nested, then ungrouped nodes.
  * Example: [{ id: "g1", children: [{ id: "a" }] }, { id: "b", children: [] }]
  */
+/*
+ * Layers panel drag and drop: put `id` directly above or below `targetId`
+ * in the stacking order. Groups and other items have separate stacks, so
+ * an item can't be dropped among groups or the other way round.
+ * Example: stack [a, b, c] (c on top), moveLayer(a, c, "above") -> [b, c, a]
+ */
+export function moveLayer(doc, id, targetId, place) {
+  const map = nodesMap(doc);
+  const moving = map.get(id);
+  const target = map.get(targetId);
+  if (!moving || !target || id === targetId || isFrame(moving) !== isFrame(target)) return;
+  const stack = [];
+  map.forEach((value, key) => {
+    if (isFrame(value) === isFrame(moving)) stack.push({ id: key, z: value.z ?? 0 });
+  });
+  const order = stack
+    .sort((a, b) => a.z - b.z)
+    .map((item) => item.id)
+    .filter((key) => key !== id);
+  const index = order.indexOf(targetId);
+  order.splice(place === "above" ? index + 1 : index, 0, id);
+  const patches = {};
+  order.forEach((key, position) => {
+    if ((map.get(key).z ?? 0) !== position + 1) patches[key] = { z: position + 1 };
+  });
+  if (Object.keys(patches).length) updateNodes(doc, patches);
+}
+
+// Whether two items share a stack (layers drag and drop only works within one).
+export function sameStack(doc, a, b) {
+  const map = nodesMap(doc);
+  return Boolean(map.get(a) && map.get(b)) && isFrame(map.get(a)) === isFrame(map.get(b));
+}
+
 export function layerTree(doc) {
   const map = nodesMap(doc);
   const items = [];
@@ -751,4 +796,102 @@ export function shapeStroke(style) {
     strokeLinecap: border.style === "dotted" ? "round" : "butt",
     strokeLinejoin: "round",
   };
+}
+
+/*
+ * Whether a text box has nothing worth keeping: no letters, only spaces
+ * and empty lines. Hidden text counts as text.
+ * Example: a box with one empty paragraph -> true
+ */
+export function isEmptyTextBox(doc, id) {
+  const value = nodesMap(doc).get(id);
+  if (value?.type !== "text") return false;
+  return !fragmentText(doc.getXmlFragment(nodeField(id)), { reveal: true }).trim();
+}
+
+// ---------------------------------------------------------------------------
+// Quick connect: the "+" beside an item adds a connected item on that side.
+// ---------------------------------------------------------------------------
+
+const OPPOSITE_SIDE = { top: "bottom", bottom: "top", left: "right", right: "left" };
+const NEIGHBOUR_GAP = GRID * 5;
+// Style that carries over to the new item, so a flowchart stays consistent.
+const NEIGHBOUR_STYLE_KEYS = ["color", "shape", "fill", "border", "radius", "fontSize", "fontFamily", "textAlign"];
+
+function overlaps(a, b, margin = GRID / 2) {
+  return a.x < b.x + b.w + margin && b.x < a.x + a.w + margin && a.y < b.y + b.h + margin && b.y < a.y + a.h + margin;
+}
+
+/*
+ * Adds an item of the same kind and style next to `sourceId` on `side`
+ * (top | right | bottom | left), joined by an arrow. If that spot is
+ * taken, it steps sideways until it finds room. Images and files get a
+ * text box. Returns the new item's id.
+ * Example: a 160×80 shape at 0,0, side "right" -> a 160×80 shape at 240,0
+ */
+export function addNeighbour(doc, sourceId, side) {
+  const map = nodesMap(doc);
+  const source = map.get(sourceId);
+  if (!source || !OPPOSITE_SIDE[side]) return null;
+  const type = ["text", "sticky", "shape"].includes(source.type) ? source.type : "text";
+  const sameKind = type === source.type && type !== "text";
+  const w = sameKind ? source.w : NODE_DEFAULTS[type].w;
+  const h = sameKind ? source.h : NODE_DEFAULTS[type].h;
+
+  const horizontal = side === "left" || side === "right";
+  let box = {
+    x: side === "right" ? source.x + source.w + NEIGHBOUR_GAP : side === "left" ? source.x - NEIGHBOUR_GAP - w : source.x + (source.w - w) / 2,
+    y: side === "bottom" ? source.y + source.h + NEIGHBOUR_GAP : side === "top" ? source.y - NEIGHBOUR_GAP - h : source.y + (source.h - h) / 2,
+    w,
+    h,
+  };
+  const others = [];
+  map.forEach((value, id) => {
+    if (id !== sourceId && value.type !== "frame" && !value.hidden) others.push(value);
+  });
+  // Alternate below / above (or right / left) of the straight spot: 1, -1, 2, -2…
+  for (let attempt = 1; attempt <= 8 && others.some((other) => overlaps(box, other)); attempt += 1) {
+    const step = Math.ceil(attempt / 2) * (attempt % 2 ? 1 : -1);
+    const straight = horizontal ? source.y + (source.h - h) / 2 : source.x + (source.w - w) / 2;
+    box = horizontal ? { ...box, y: straight + step * (h + GRID * 2) } : { ...box, x: straight + step * (w + GRID * 2) };
+  }
+
+  const style = Object.fromEntries(
+    NEIGHBOUR_STYLE_KEYS.filter((key) => sameKind && source[key] !== undefined).map((key) => [key, source[key]]),
+  );
+  const id = addNode(doc, type, { x: box.x, y: box.y, w, h, ...style, group: source.group ?? null });
+  addEdge(doc, { source: sourceId, target: id, sourceHandle: side, targetHandle: OPPOSITE_SIDE[side] });
+  return id;
+}
+
+// ---------------------------------------------------------------------------
+// Find on the board
+// ---------------------------------------------------------------------------
+
+/*
+ * Everything on the board that contains `query`, in reading order:
+ * [{ kind: "node" | "edge", id }]. Hidden boxes and hidden text are only
+ * searched when `reveal` is on.
+ * Example: query "plan" on a sticky "Q3 plan" and an arrow labelled "plan B" -> 2 results
+ */
+export function findOnBoard(doc, query, { caseSensitive = false, reveal = false } = {}) {
+  const needle = caseSensitive ? query : query.toLowerCase();
+  if (!needle) return [];
+  const contains = (text) => Boolean(text) && (caseSensitive ? text : text.toLowerCase()).includes(needle);
+  const map = nodesMap(doc);
+  const results = [];
+  map.forEach((value, id) => {
+    if (value.hidden || (value.secret && !reveal)) return;
+    const texts = [fragmentText(doc.getXmlFragment(nodeField(id)), { reveal }), value.label, value.name];
+    if (texts.some(contains)) results.push({ kind: "node", id, x: value.x, y: value.y });
+  });
+  edgesMap(doc).forEach((edge, id) => {
+    if (!contains(edge.label)) return;
+    const a = map.get(edge.source);
+    const b = map.get(edge.target);
+    if (!a || !b) return;
+    results.push({ kind: "edge", id, x: (a.x + a.w / 2 + b.x + b.w / 2) / 2, y: (a.y + a.h / 2 + b.y + b.h / 2) / 2 });
+  });
+  const ROW = 40;
+  return results.sort((a, b) => Math.floor(a.y / ROW) - Math.floor(b.y / ROW) || a.x - b.x);
 }

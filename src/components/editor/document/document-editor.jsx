@@ -2,18 +2,23 @@
 
 import { useEffect, useRef, useState } from "react";
 import { EditorContent, useEditor, useEditorState } from "@tiptap/react";
+import { useCommentThreads } from "@/hooks/use-comment-threads";
 import { useHotkeys } from "@/hooks/use-hotkeys";
 import { useMediaQuery } from "@/hooks/use-media-query";
 import { usePaper } from "@/hooks/use-paper";
+import { quoteOf } from "@/lib/editor/comments";
 import { getPages, setPaginationConfig } from "@/lib/editor/pagination";
 import { PAGE_GAP_PX, pageMetrics } from "@/lib/editor/paper";
 import { uploadAttachment } from "@/lib/notes/attachments";
 import { NoteTitle } from "../note-title";
 import { BlockHandle } from "./block-handle";
 import { BubbleToolbar } from "./bubble-toolbar";
+import { CommentsPanel } from "./comments-panel";
 import { useDocumentContextMenu } from "./document-context-menu";
 import { documentExtensions } from "./document-extensions";
+import { FindBar } from "./find-bar";
 import { MobileToolbar } from "./mobile-toolbar";
+import { OutlinePanel } from "./outline-panel";
 import { PaperControls, ZOOM_STEPS } from "./paper-controls";
 import { PaperView } from "./paper-view";
 import { TableMenu } from "./table-menu";
@@ -22,6 +27,7 @@ import { TableMenu } from "./table-menu";
 const BLOCK_GAP_PX = 12;
 const TITLE_GAP_PX = 16;
 const ZOOM_KEY = "qn:paper-zoom";
+const OUTLINE_KEY = "qn:outline-open";
 const WORD_COUNT_DELAY_MS = 500;
 
 /*
@@ -34,7 +40,17 @@ function createBridge() {
     set: (next) => Object.assign(handlers, next),
     pickFile: (accept) => handlers.pickFile?.(accept),
     onFiles: (files, pos) => handlers.onFiles?.(files, pos),
+    onCommentActivate: (threadId) => handlers.onCommentActivate?.(threadId),
+    startComment: () => handlers.startComment?.(),
   };
+}
+
+function readOutlineOpen() {
+  try {
+    return localStorage.getItem(OUTLINE_KEY) === "1";
+  } catch {
+    return false;
+  }
 }
 
 function readZoom() {
@@ -80,6 +96,12 @@ export function DocumentEditor({
   const fileInputRef = useRef(null);
   const insertAtRef = useRef(null);
   const [bridge] = useState(createBridge);
+  const [outlineOpen, setOutlineOpenState] = useState(readOutlineOpen);
+  const [find, setFind] = useState({ open: false, replace: false, key: 0 });
+  const [commentsOpen, setCommentsOpen] = useState(false);
+  const [draft, setDraft] = useState(null);
+  const [activeThread, setActiveThread] = useState(null);
+  const threads = useCommentThreads(doc);
 
   const scale = reflow
     ? 1
@@ -154,9 +176,59 @@ export function DocumentEditor({
     input.click();
   }
 
+  // ---- outline, find, comments ----------------------------------------------
+
+  function setOutlineOpen(open) {
+    setOutlineOpenState(open);
+    try {
+      localStorage.setItem(OUTLINE_KEY, open ? "1" : "0");
+    } catch {}
+  }
+
+  function openFind(replace) {
+    setFind((current) => ({ open: true, replace, key: current.key + 1 }));
+  }
+
+  // Marks the selected text and opens a new thread for it in the panel.
+  function startComment() {
+    if (!editor || readOnly || editor.state.selection.empty) return;
+    if (draft) editor.commands.removeComment(draft.id);
+    const { from, to } = editor.state.selection;
+    const id = crypto.randomUUID();
+    const quote = quoteOf(editor.state, from, to);
+    editor.chain().setComment(id).setTextSelection(to).run();
+    setDraft({ id, quote });
+    setActiveThread(id);
+    setCommentsOpen(true);
+  }
+
+  function finishDraft({ cancelled }) {
+    if (!draft) return;
+    if (cancelled) {
+      editor?.commands.removeComment(draft.id);
+      setActiveThread(null);
+    }
+    setDraft(null);
+  }
+
+  function activateThread(threadId) {
+    setActiveThread(threadId);
+    if (threadId) setCommentsOpen(true);
+  }
+
+  // Highlight open threads (and the one being written); resolved ones go quiet.
+  useEffect(() => {
+    if (!editor) return;
+    const visible = new Set([...threads.values()].filter((thread) => !thread.resolved).map((thread) => thread.id));
+    if (draft) visible.add(draft.id);
+    editor.commands.setCommentView({ visible, active: commentsOpen ? activeThread : null });
+  }, [editor, threads, draft, activeThread, commentsOpen]);
+
+  const openThreadCount = [...threads.values()].filter((thread) => !thread.resolved).length;
+
   // Extensions are built once per document; they reach the latest handlers through the bridge.
   useEffect(() => {
-    bridge.set({ pickFile, onFiles: handleFiles });
+    bridge.set({ pickFile, onFiles: handleFiles, onCommentActivate: activateThread, startComment });
   });
 
 
@@ -210,10 +282,64 @@ export function DocumentEditor({
     { combo: "mod+=", allowInInputs: true, handler: () => setZoom(ZOOM_STEPS.find((value) => value > scale + 0.001) ?? scale) },
     { combo: "mod+-", allowInInputs: true, handler: () => setZoom([...ZOOM_STEPS].reverse().find((value) => value < scale - 0.001) ?? scale) },
     { combo: "mod+0", allowInInputs: true, handler: () => setZoom("fit") },
+    { combo: "mod+f", allowInInputs: true, handler: () => openFind(false) },
+    { combo: "mod+h", allowInInputs: true, handler: () => openFind(true) },
+    { combo: "mod+alt+f", allowInInputs: true, handler: () => openFind(true) },
+    { combo: "mod+alt+m", allowInInputs: true, handler: () => editor?.view.hasFocus() && startComment() },
   ]);
+
+  const panelToggles = {
+    outlineOpen,
+    onToggleOutline: () => setOutlineOpen(!outlineOpen),
+    findOpen: find.open,
+    onFind: () => (find.open ? setFind((current) => ({ ...current, open: false })) : openFind(false)),
+    commentsOpen,
+    commentCount: openThreadCount,
+    onToggleComments: () => {
+      if (commentsOpen) finishDraft({ cancelled: true });
+      setCommentsOpen(!commentsOpen);
+    },
+  };
 
   return (
     <div className="relative flex min-h-full flex-col">
+      {editor && (outlineOpen || find.open || commentsOpen) && (
+        <div className="pointer-events-none sticky top-3 z-30 h-0 px-3 md:top-4 md:px-4">
+          <div className="flex items-start justify-between gap-3">
+            <div className="pointer-events-auto">
+              {outlineOpen && <OutlinePanel editor={editor} onClose={() => setOutlineOpen(false)} scrollRef={scrollRef} />}
+            </div>
+            <div className="pointer-events-auto flex flex-col items-end gap-2">
+              {find.open && (
+                <FindBar
+                  editor={editor}
+                  focusKey={find.key}
+                  onClose={() => setFind((current) => ({ ...current, open: false }))}
+                  readOnly={readOnly}
+                  withReplace={find.replace}
+                />
+              )}
+              {commentsOpen && (
+                <CommentsPanel
+                  activeId={activeThread}
+                  doc={doc}
+                  draft={draft}
+                  editor={editor}
+                  onActivate={setActiveThread}
+                  onClose={() => {
+                    finishDraft({ cancelled: true });
+                    setCommentsOpen(false);
+                  }}
+                  onDraftDone={finishDraft}
+                  readOnly={readOnly}
+                  threads={threads}
+                  user={user}
+                />
+              )}
+            </div>
+          </div>
+        </div>
+      )}
       <div className="flex-1 px-0 pt-4 pb-28 md:px-6 md:pt-8">
         <PaperView metrics={metrics} pages={pages} paper={paper} reflow={reflow} scale={scale}>
           <div ref={titleWrapRef} style={{ marginBottom: TITLE_GAP_PX }}>
@@ -232,7 +358,7 @@ export function DocumentEditor({
 
       {editor && !readOnly && (
         <>
-          <BubbleToolbar editor={editor} />
+          <BubbleToolbar editor={editor} onComment={startComment} />
           <TableMenu editor={editor} />
           {!isPhone && <BlockHandle editor={editor} />}
           {isPhone && <MobileToolbar editor={editor} onPickFile={pickFile} />}
@@ -251,6 +377,7 @@ export function DocumentEditor({
           setZoom={setZoom}
           words={words}
           zoom={zoom}
+          {...panelToggles}
         />
       </div>
       {isPhone && (
@@ -266,6 +393,7 @@ export function DocumentEditor({
           setZoom={setZoom}
           words={words}
           zoom={zoom}
+          {...panelToggles}
         />
       )}
 

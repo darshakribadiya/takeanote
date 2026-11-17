@@ -3,8 +3,9 @@
 import { useRef, useState } from "react";
 import { Icon } from "@iconify/react";
 import { DragHandle } from "@tiptap/extension-drag-handle-react";
-import { Menu, MenuItem, MenuPopup, MenuSeparator, MenuSub, MenuSubPopup, MenuSubTrigger } from "@/components/ui/menu";
-import { BLOCK_TYPES } from "@/lib/editor/formatting";
+import { Menu, MenuItem, MenuPopup, MenuSeparator, MenuShortcut, MenuSub, MenuSubPopup, MenuSubTrigger } from "@/components/ui/menu";
+import { BLOCK_TYPES, formatShortcut } from "@/lib/editor/formatting";
+import { isMac } from "@/lib/format";
 
 /*
  * Hover handle left of each block: "+" inserts a block below (opening
@@ -15,6 +16,7 @@ export function BlockHandle({ editor }) {
   // The handle hides once the pointer leaves the block; keep where it was.
   const anchorRect = useRef(null);
   const [menuOpen, setMenuOpen] = useState(false);
+  const mac = isMac();
 
   function current() {
     const { node, pos } = target.current ?? {};
@@ -36,19 +38,7 @@ export function BlockHandle({ editor }) {
 
   function move(direction) {
     const block = current();
-    if (!block) return;
-    const $pos = editor.state.doc.resolve(block.pos);
-    const index = $pos.index();
-    const parent = $pos.parent;
-    const neighbourIndex = index + direction;
-    if (neighbourIndex < 0 || neighbourIndex >= parent.childCount) return;
-    const neighbour = parent.child(neighbourIndex);
-    const { tr } = editor.state;
-    tr.delete(block.pos, block.end);
-    const insertAt = direction < 0 ? block.pos - neighbour.nodeSize : block.pos + neighbour.nodeSize;
-    tr.insert(insertAt, block.node);
-    editor.view.dispatch(tr.scrollIntoView());
-    editor.commands.focus();
+    if (block) editor.chain().moveBlock(direction, block.pos).focus(undefined, { scrollIntoView: false }).run();
   }
 
   function turnInto(type) {
@@ -59,7 +49,7 @@ export function BlockHandle({ editor }) {
 
   function duplicate() {
     const block = current();
-    if (block) editor.chain().focus().insertContentAt(block.end, block.node.toJSON()).run();
+    if (block) editor.chain().duplicateBlock(block.pos).focus(undefined, { scrollIntoView: false }).run();
   }
 
   function remove() {
@@ -71,6 +61,7 @@ export function BlockHandle({ editor }) {
     <DragHandle
       className="block-handle"
       editor={editor}
+      getReferencedVirtualElement={() => firstLineAnchor(editor, target.current)}
       onNodeChange={({ node, pos }) => {
         if (!menuOpen) target.current = { node, pos };
       }}
@@ -117,14 +108,17 @@ export function BlockHandle({ editor }) {
             <MenuItem onClick={() => move(-1)}>
               <Icon icon="mdi:arrow-up" />
               Move up
+              <MenuShortcut>{formatShortcut("Alt ↑", mac)}</MenuShortcut>
             </MenuItem>
             <MenuItem onClick={() => move(1)}>
               <Icon icon="mdi:arrow-down" />
               Move down
+              <MenuShortcut>{formatShortcut("Alt ↓", mac)}</MenuShortcut>
             </MenuItem>
             <MenuItem onClick={duplicate}>
               <Icon icon="mdi:content-copy" />
               Duplicate
+              <MenuShortcut>{formatShortcut("Mod D", mac)}</MenuShortcut>
             </MenuItem>
             <MenuSeparator />
             <MenuItem onClick={remove} variant="destructive">
@@ -136,4 +130,49 @@ export function BlockHandle({ editor }) {
       </div>
     </DragHandle>
   );
+}
+
+const HANDLE_HEIGHT = 24;
+
+/*
+ * Anchor the handle on the middle of the block's first line, so it sits
+ * level with a big heading or a tall image instead of their top edge.
+ * Example: H1 with a 40px line at y=100 -> anchor box y=108..132.
+ */
+function firstLineAnchor(editor, block) {
+  if (!block?.node || block.pos == null) return null;
+  const dom = editor.view.nodeDOM(block.pos);
+  if (!(dom instanceof Element)) return null;
+  const blockRect = dom.getBoundingClientRect();
+  const line = firstLineRect(dom);
+  if (!line) return null;
+  // A tall image centres on its visible part so the handle stays on screen.
+  const visibleTop = Math.max(line.top, 0);
+  const visibleBottom = Math.min(line.bottom, window.innerHeight);
+  const center = visibleBottom > visibleTop ? (visibleTop + visibleBottom) / 2 : (line.top + line.bottom) / 2;
+  const top = center - HANDLE_HEIGHT / 2;
+  const rect = new DOMRect(blockRect.left, top, blockRect.width, HANDLE_HEIGHT);
+  return { getBoundingClientRect: () => rect };
+}
+
+function firstLineRect(dom) {
+  const walker = document.createTreeWalker(dom, NodeFilter.SHOW_ELEMENT | NodeFilter.SHOW_TEXT, {
+    acceptNode: (node) =>
+      (node.nodeType === Node.TEXT_NODE && node.textContent.trim()) || ["IMG", "VIDEO", "IFRAME", "HR"].includes(node.nodeName)
+        ? NodeFilter.FILTER_ACCEPT
+        : NodeFilter.FILTER_SKIP,
+  });
+  const leaf = walker.nextNode();
+  if (!leaf) {
+    // Empty block: the line box is the block's own content box.
+    const style = getComputedStyle(dom);
+    const lineHeight = parseFloat(style.lineHeight) || parseFloat(style.fontSize) * 1.5;
+    const top = dom.getBoundingClientRect().top + parseFloat(style.paddingTop || 0);
+    return { top, bottom: top + lineHeight, height: lineHeight };
+  }
+  if (leaf.nodeType !== Node.TEXT_NODE) return leaf.getBoundingClientRect();
+  const range = document.createRange();
+  range.setStart(leaf, 0);
+  range.setEnd(leaf, Math.min(1, leaf.length));
+  return range.getClientRects()[0] ?? null;
 }

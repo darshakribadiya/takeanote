@@ -23,12 +23,6 @@ export const PATTERNS = [
   { value: "dotted", label: "Dotted", icon: "mdi:dots-grid" },
 ];
 
-export const MARGIN_PRESETS = {
-  narrow: { label: "Narrow", value: 12.7 },
-  normal: { label: "Normal", value: 25.4 },
-  wide: { label: "Wide", value: 38 },
-};
-
 export const DEFAULT_PAPER = {
   size: "a4",
   customWidth: 210,

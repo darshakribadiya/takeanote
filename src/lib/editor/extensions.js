@@ -1,5 +1,6 @@
 import { Extension, Node, mergeAttributes } from "@tiptap/core";
-import { Plugin, PluginKey } from "@tiptap/pm/state";
+import { NodeSelection, Plugin, PluginKey, TextSelection } from "@tiptap/pm/state";
+import { Decoration, DecorationSet } from "@tiptap/pm/view";
 
 /*
  * Forces the next block onto a new page (paged layout and print).
@@ -164,6 +165,120 @@ export const MarkdownPaste = Extension.create({
             const text = data.getData("text/plain");
             if (!text || !MARKDOWN_LINE.test(text)) return false;
             return editor.commands.insertContent(text, { contentType: "markdown" });
+          },
+        },
+      }),
+    ];
+  },
+});
+
+const NESTED_BLOCKS = ["listItem", "taskItem"];
+
+/*
+ * The block the caret is in: the innermost list item, else the top-level
+ * block. With `pos`, the block that starts at `pos` (the drag handle's).
+ * Returns { pos, node, depth } where depth is the parent's depth.
+ */
+function blockAt(state, pos) {
+  if (pos != null) {
+    const node = state.doc.nodeAt(pos);
+    return node ? { pos, node, depth: state.doc.resolve(pos).depth } : null;
+  }
+  const { selection } = state;
+  // A selected image or divider is itself the block.
+  if (selection.node) return { pos: selection.from, node: selection.node, depth: selection.$from.depth };
+  const { $from } = selection;
+  for (let depth = $from.depth; depth > 0; depth -= 1) {
+    if (NESTED_BLOCKS.includes($from.node(depth).type.name)) {
+      return { pos: $from.before(depth), node: $from.node(depth), depth: depth - 1 };
+    }
+  }
+  if ($from.depth < 1) return null;
+  return { pos: $from.before(1), node: $from.node(1), depth: 0 };
+}
+
+/*
+ * Move or duplicate a block: Alt+↑ / Alt+↓ swap it with its neighbour
+ * (a list item moves within its list), Mod+D duplicates it below.
+ * The caret keeps its place inside the moved block.
+ */
+export const BlockMove = Extension.create({
+  name: "blockMove",
+
+  addCommands() {
+    return {
+      moveBlock:
+        (direction, pos) =>
+        ({ state, tr, dispatch }) => {
+          const block = blockAt(state, pos);
+          if (!block) return false;
+          const $pos = state.doc.resolve(block.pos);
+          const index = $pos.index();
+          const neighbourIndex = index + direction;
+          if (neighbourIndex < 0 || neighbourIndex >= $pos.parent.childCount) return false;
+          if (!dispatch) return true;
+          const neighbour = $pos.parent.child(neighbourIndex);
+          const end = block.pos + block.node.nodeSize;
+          const offset = state.selection.from - block.pos;
+          const wasNode = Boolean(state.selection.node);
+          tr.delete(block.pos, end);
+          const insertAt = direction < 0 ? block.pos - neighbour.nodeSize : block.pos + neighbour.nodeSize;
+          tr.insert(insertAt, block.node);
+          const inside = Math.min(insertAt + Math.max(offset, 0), tr.doc.content.size);
+          tr.setSelection(
+            wasNode ? NodeSelection.create(tr.doc, insertAt) : TextSelection.near(tr.doc.resolve(inside)),
+          );
+          dispatch(tr.scrollIntoView());
+          return true;
+        },
+      duplicateBlock:
+        (pos) =>
+        ({ state, tr, dispatch }) => {
+          const block = blockAt(state, pos);
+          if (!block) return false;
+          if (!dispatch) return true;
+          const end = block.pos + block.node.nodeSize;
+          const offset = state.selection.from - block.pos;
+          tr.insert(end, block.node.copy(block.node.content));
+          if (pos == null) {
+            const inside = Math.min(end + Math.max(offset, 0), tr.doc.content.size);
+            tr.setSelection(
+              state.selection.node ? NodeSelection.create(tr.doc, end) : TextSelection.near(tr.doc.resolve(inside)),
+            );
+          }
+          dispatch(tr.scrollIntoView());
+          return true;
+        },
+    };
+  },
+
+  addKeyboardShortcuts() {
+    return {
+      "Alt-ArrowUp": () => this.editor.commands.moveBlock(-1),
+      "Alt-ArrowDown": () => this.editor.commands.moveBlock(1),
+      "Mod-d": () => this.editor.commands.duplicateBlock(),
+    };
+  },
+});
+
+/*
+ * Marks the top-level block holding the caret with `is-focus-block`, so
+ * focus mode can dim every other paragraph (CSS in globals.css).
+ */
+export const FocusBlock = Extension.create({
+  name: "focusBlock",
+
+  addProseMirrorPlugins() {
+    return [
+      new Plugin({
+        key: new PluginKey("focusBlock"),
+        props: {
+          decorations(state) {
+            const { selection, doc } = state;
+            const pos = selection.$head.depth >= 1 ? selection.$head.before(1) : selection.from;
+            const node = doc.nodeAt(pos);
+            if (!node) return null;
+            return DecorationSet.create(doc, [Decoration.node(pos, pos + node.nodeSize, { class: "is-focus-block" })]);
           },
         },
       }),

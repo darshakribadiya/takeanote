@@ -17,7 +17,7 @@ export const ALIGN_ACTIONS = [
   { mode: "spread-y", label: "Spread vertically", icon: "mdi:distribute-vertical-center", min: 3 },
 ];
 
-const ARRANGE_ACTIONS = [
+export const ARRANGE_ACTIONS = [
   { direction: "front", label: "Bring to front", icon: "mdi:arrange-bring-to-front", shortcut: "Mod Shift ]" },
   { direction: "forward", label: "Bring forward", icon: "mdi:arrange-bring-forward", shortcut: "Mod ]" },
   { direction: "backward", label: "Send backward", icon: "mdi:arrange-send-backward", shortcut: "Mod [" },
@@ -78,7 +78,13 @@ function NodeItems({ doc, selection, board }) {
       {single && ["text", "sticky", "shape"].includes(single.type) && (
         <PointerMenuItem icon="mdi:pencil-outline" label="Edit text" onClick={() => board.editNode(single.id)} shortcut="Enter" />
       )}
-      <PointerMenuItem icon="mdi:content-copy" label="Duplicate" onClick={board.duplicateSelection} shortcut="Mod D" />
+      {single?.type === "frame" && (
+        <PointerMenuItem icon="mdi:rename-outline" label="Rename group" onClick={() => board.renameGroup(single.id)} />
+      )}
+      <PointerMenuItem icon="mdi:content-cut" label="Cut" onClick={board.cutSelection} shortcut="Mod X" />
+      <PointerMenuItem icon="mdi:content-copy" label="Copy" onClick={board.copySelection} shortcut="Mod C" />
+      <PointerMenuItem icon="mdi:content-paste" label="Paste" onClick={() => board.pasteAt()} shortcut="Mod V" />
+      <PointerMenuItem icon="mdi:content-duplicate" label="Duplicate" onClick={board.duplicateSelection} shortcut="Mod D" />
       {hasFrames ? (
         <PointerMenuItem icon="mdi:ungroup" label="Ungroup" onClick={board.ungroupSelection} shortcut="Mod Shift G" />
       ) : (
@@ -166,6 +172,7 @@ function PaneItems({ board, point, readOnly }) {
               />
             ))}
           </SubMenu>
+          <PointerMenuItem icon="mdi:content-paste" label="Paste here" onClick={() => board.pasteAt(point)} shortcut="Mod V" />
           <PointerMenuItem disabled={!board.canUndo} icon="mdi:undo" label="Undo" onClick={board.undo} shortcut="Mod Z" />
           <PointerMenuItem disabled={!board.canRedo} icon="mdi:redo" label="Redo" onClick={board.redo} shortcut="Mod Shift Z" />
           <PointerMenuItem disabled={board.empty} icon="mdi:select-all" label="Select all" onClick={board.selectAll} />
@@ -177,6 +184,9 @@ function PaneItems({ board, point, readOnly }) {
       <MenuSeparator />
       <MenuCheckboxItem checked={board.prefs.snap} onCheckedChange={(value) => board.setPref("snap", value)}>
         Snap to grid
+      </MenuCheckboxItem>
+      <MenuCheckboxItem checked={board.prefs.guides} onCheckedChange={(value) => board.setPref("guides", value)}>
+        Alignment guides
       </MenuCheckboxItem>
       <MenuCheckboxItem
         checked={board.prefs.minimap}

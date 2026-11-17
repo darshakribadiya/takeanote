@@ -20,6 +20,7 @@ import { SidebarTrigger } from "@/components/ui/sidebar";
 import { Toggle } from "@/components/ui/toggle";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "@/components/ui/tooltip";
 import { altKey, modKey } from "@/lib/format";
+import { setFocusMode } from "@/lib/focus-mode";
 import {
   archiveNote,
   moveToFolder,
@@ -30,13 +31,14 @@ import {
   unarchiveNote,
 } from "@/lib/notes/api";
 import { useStore } from "@/lib/notes/store";
+import { CanvasHeaderTitle } from "@/components/editor/note-body";
 import { PresenceAvatars } from "@/components/presence-avatars";
 import { SharePopover } from "./share-popover";
 import { useWorkspace } from "./workspace";
 
 const NO_FOLDER = "none";
 
-export function NoteToolbar({ note, kind, status, awareness, autosave, onAutosaveChange, actions, shareOpen, onShareOpenChange, onTrash }) {
+export function NoteToolbar({ note, kind, doc, status, awareness, autosave, onAutosaveChange, actions, shareOpen, onShareOpenChange, onTrash }) {
   const { readMode, setReadMode, selectNote, toast } = useWorkspace();
   const folders = useStore((s) => s.folders);
   const trashed = Boolean(note.deleted_at);
@@ -53,10 +55,11 @@ export function NoteToolbar({ note, kind, status, awareness, autosave, onAutosav
   }
 
   return (
-    <header className="flex h-14 shrink-0 items-center gap-1 border-b px-2 md:px-4">
+    <header className="flex h-14 shrink-0 items-center gap-1 border-b px-2 md:px-4" data-focus-hide="">
       <SidebarTrigger aria-label="Toggle sidebar" className="shrink-0" />
 
       <div className="flex min-w-0 flex-1 items-center gap-3 ps-1">
+        {kind === "canvas" && doc && <CanvasHeaderTitle className="max-w-[40vw] md:max-w-xs" doc={doc} readOnly={trashed} />}
         {folder && (
           <span className="inline-flex min-w-0 items-center gap-1 text-sm text-muted-foreground max-sm:hidden">
             <Icon className="size-4 shrink-0" icon="mdi:folder-outline" />
@@ -94,6 +97,12 @@ export function NoteToolbar({ note, kind, status, awareness, autosave, onAutosav
           <SharePopover awareness={awareness} note={note} onOpenChange={onShareOpenChange} open={shareOpen} />
         </>
       )}
+
+      <ToolbarTooltip label="Focus mode" shortcut={`${modKey()} Shift F`}>
+        <Button aria-label="Focus mode" onClick={() => setFocusMode(true)} size="icon-sm" variant="ghost">
+          <Icon icon="mdi:fullscreen" />
+        </Button>
+      </ToolbarTooltip>
 
       <Menu>
         <MenuTrigger render={<Button aria-label="More actions" size="icon-sm" variant="ghost" />}>

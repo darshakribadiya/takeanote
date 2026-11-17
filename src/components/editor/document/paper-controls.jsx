@@ -1,26 +1,49 @@
 "use client";
 
+import { useState } from "react";
 import { Icon } from "@iconify/react";
 import { Input } from "@/components/ui/input";
 import { Popover, PopoverPopup, PopoverTitle, PopoverTrigger } from "@/components/ui/popover";
 import { SegmentedControl, SegmentedControlItem } from "@/components/ui/segmented-control";
+import { Slider } from "@/components/ui/slider";
 import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
-import { MARGIN_PRESETS, PAPER_SIZES, paperLabel, PATTERNS } from "@/lib/editor/paper";
+import { PAPER_SIZES, paperLabel, PATTERNS } from "@/lib/editor/paper";
+import { useFocusMode } from "@/hooks/use-focus-mode";
+import { setFocusDim, toggleFocusMode } from "@/lib/focus-mode";
+import { isMac } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
 export const ZOOM_STEPS = [0.5, 0.67, 0.75, 0.9, 1, 1.1, 1.25, 1.5, 2];
-const LINE_HEIGHTS = [
-  { value: 1.3, label: "Tight" },
-  { value: 1.6, label: "Normal" },
-  { value: 2, label: "Loose" },
-];
+// Slider ranges; margins in mm, line spacing as a multiple of the font size.
+const MARGIN_RANGE = { min: 5, max: 50, step: 0.5 };
+const LINE_HEIGHT_RANGE = { min: 1, max: 3, step: 0.05 };
 
 /*
  * Floating pill in the corner of the paper: zoom, fit and the paper
  * settings popover. Everything is optional and out of the way.
  */
-export function PaperControls({ paper, setPaper, scale, zoom, setZoom, reflow, onTogglePreview, isPhone, words, readOnly }) {
+export function PaperControls({
+  paper,
+  setPaper,
+  scale,
+  zoom,
+  setZoom,
+  reflow,
+  onTogglePreview,
+  isPhone,
+  words,
+  readOnly,
+  outlineOpen,
+  onToggleOutline,
+  findOpen,
+  onFind,
+  commentsOpen,
+  commentCount,
+  onToggleComments,
+}) {
+  const mod = isMac() ? "⌘" : "Ctrl+";
+  const focus = useFocusMode();
   function step(direction) {
     const index = ZOOM_STEPS.findIndex((value) => value >= scale - 0.001);
     const next = direction > 0 ? ZOOM_STEPS.find((value) => value > scale + 0.001) : [...ZOOM_STEPS].reverse().find((value) => value < scale - 0.001);
@@ -54,6 +77,35 @@ export function PaperControls({ paper, setPaper, scale, zoom, setZoom, reflow, o
           </PillButton>
         </>
       )}
+      <span aria-hidden="true" className="mx-0.5 h-5 w-px bg-border" />
+      {focus.active && (
+        <PillButton active={focus.dim} label="Dim other paragraphs" onClick={() => setFocusDim(!focus.dim)}>
+          <Icon icon="mdi:format-paragraph" />
+        </PillButton>
+      )}
+      <PillButton
+        active={focus.active}
+        label={`${focus.active ? "Exit focus mode" : "Focus mode"} (${mod}Shift+F)`}
+        onClick={toggleFocusMode}
+      >
+        <Icon icon={focus.active ? "mdi:fullscreen-exit" : "mdi:fullscreen"} />
+      </PillButton>
+      <PillButton active={outlineOpen} label="Outline" onClick={onToggleOutline}>
+        <Icon icon="mdi:format-list-text" />
+      </PillButton>
+      <PillButton active={findOpen} label={`Find & replace (${mod}F)`} onClick={onFind}>
+        <Icon icon="mdi:magnify" />
+      </PillButton>
+      <PillButton active={commentsOpen} label="Comments" onClick={onToggleComments}>
+        <span className="relative">
+          <Icon className="size-4.5" icon="mdi:comment-outline" />
+          {commentCount > 0 && (
+            <span className="absolute -top-1.5 -right-2 min-w-4 rounded-full bg-primary px-1 text-center text-[0.625rem] leading-4 font-semibold text-primary-foreground tabular-nums">
+              {commentCount > 99 ? "99+" : commentCount}
+            </span>
+          )}
+        </span>
+      </PillButton>
       <span aria-hidden="true" className="mx-0.5 h-5 w-px bg-border" />
       <Popover>
         <PopoverTrigger
@@ -138,21 +190,21 @@ function PaperSettings({ paper, setPaper, readOnly }) {
         <Choice iconsOnly onChange={(pattern) => setPaper({ pattern })} options={PATTERNS} value={paper.pattern} />
       </Row>
 
-      <Row label="Margins">
-        <Choice
-          onChange={(key) => setPaper({ margin: MARGIN_PRESETS[key].value })}
-          options={Object.entries(MARGIN_PRESETS).map(([value, preset]) => ({ value, label: preset.label }))}
-          value={Object.entries(MARGIN_PRESETS).find(([, preset]) => preset.value === paper.margin)?.[0]}
-        />
-      </Row>
+      <SliderSetting
+        {...MARGIN_RANGE}
+        format={(value) => `${Number.isInteger(value) ? value : value.toFixed(1)} mm`}
+        label="Margins"
+        onCommit={(margin) => setPaper({ margin })}
+        value={paper.margin}
+      />
 
-      <Row label="Line spacing">
-        <Choice
-          onChange={(value) => setPaper({ lineHeight: Number(value) })}
-          options={LINE_HEIGHTS.map((item) => ({ value: String(item.value), label: item.label }))}
-          value={String(paper.lineHeight)}
-        />
-      </Row>
+      <SliderSetting
+        {...LINE_HEIGHT_RANGE}
+        format={(value) => `${value.toFixed(2)}×`}
+        label="Line spacing"
+        onCommit={(lineHeight) => setPaper({ lineHeight })}
+        value={paper.lineHeight}
+      />
 
       <div className="flex flex-col gap-2 border-t pt-3">
         <TextSetting label="Header" onCommit={(header) => setPaper({ header })} value={paper.header} />
@@ -171,6 +223,36 @@ function Row({ label, children }) {
     <div className="flex items-center justify-between gap-3">
       <span className="text-sm text-muted-foreground">{label}</span>
       {children}
+    </div>
+  );
+}
+
+/*
+ * Label, live value and a full-width slider. The paper only re-flows on
+ * release, so dragging stays smooth on long documents.
+ */
+function SliderSetting({ label, value, min, max, step, format, onCommit }) {
+  const [draft, setDraft] = useState(null);
+  const shown = draft ?? value;
+  return (
+    <div className="flex flex-col gap-2">
+      <div className="flex items-center justify-between gap-3">
+        <span className="text-sm text-muted-foreground">{label}</span>
+        <span className="text-xs tabular-nums">{format(shown)}</span>
+      </div>
+      <Slider
+        className="[&_[data-slot=slider-control]]:min-w-0"
+        getAriaLabel={() => label}
+        max={max}
+        min={min}
+        onValueChange={(next) => setDraft(next)}
+        onValueCommitted={(next) => {
+          setDraft(null);
+          if (next !== value) onCommit(next);
+        }}
+        step={step}
+        value={shown}
+      />
     </div>
   );
 }
@@ -233,12 +315,14 @@ function TextSetting({ label, value, onCommit }) {
   );
 }
 
-function PillButton({ label, onClick, disabled, children }) {
+function PillButton({ label, onClick, disabled, active, children }) {
   return (
     <button
       aria-label={label}
+      aria-pressed={active === undefined ? undefined : Boolean(active)}
       className={cn(
         "inline-flex size-8 items-center justify-center rounded-md hover:bg-accent disabled:opacity-40 [&_svg]:size-4.5",
+        active && "bg-accent text-accent-foreground",
       )}
       disabled={disabled}
       onClick={onClick}

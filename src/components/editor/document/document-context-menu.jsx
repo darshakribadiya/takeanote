@@ -143,6 +143,9 @@ function EditableItems({ editor, target, actions, run }) {
           />
         </SubMenu>
       )}
+      {target.hasSelection && actions?.startComment && (
+        <PointerMenuItem icon="mdi:comment-plus-outline" label="Comment" onClick={() => actions.startComment()} shortcut="Mod Alt M" />
+      )}
       <SubMenu icon="mdi:swap-horizontal" label="Turn into">
         {BLOCK_TYPES.map((type) => (
           <PointerMenuItem
@@ -213,7 +216,6 @@ function EditableItems({ editor, target, actions, run }) {
 
       <MenuSeparator />
       <PointerMenuItem icon="mdi:select-all" label="Select all" onClick={() => chain().selectAll().run()} shortcut="Mod A" />
-      <ShowHiddenTextItem />
     </>
   );
 }

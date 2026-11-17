@@ -1,6 +1,5 @@
 import { Collaboration } from "@tiptap/extension-collaboration";
 import { CollaborationCaret } from "@tiptap/extension-collaboration-caret";
-import { Image } from "@tiptap/extension-image";
 import { TaskItem, TaskList } from "@tiptap/extension-list";
 import { TableKit } from "@tiptap/extension-table";
 import { TextAlign } from "@tiptap/extension-text-align";
@@ -8,11 +7,14 @@ import { BackgroundColor, Color, TextStyle } from "@tiptap/extension-text-style"
 import { CharacterCount, Placeholder } from "@tiptap/extensions";
 import { Markdown } from "@tiptap/markdown";
 import { StarterKit } from "@tiptap/starter-kit";
-import { FileDrop, Indent, PageBreak } from "@/lib/editor/extensions";
+import { BlockMove, FileDrop, FocusBlock, Indent, PageBreak } from "@/lib/editor/extensions";
+import { CommentMark } from "@/lib/editor/comments";
 import { Pagination } from "@/lib/editor/pagination";
+import { Search } from "@/lib/editor/search";
 import { SecretText } from "@/lib/editor/secret-text";
 import { BODY } from "@/lib/sync/doc-model";
 import { Attachment } from "./attachment-node";
+import { DocumentImage } from "./image-node";
 import { SlashCommand } from "./slash-command";
 
 function caret(user) {
@@ -55,18 +57,19 @@ export function documentExtensions({ doc, awareness, user, onFiles, actions, fie
     TextStyle,
     Color,
     BackgroundColor,
-    SecretText,
-    Image.configure({
-      allowBase64: false,
-      resize: { enabled: true, minWidth: 80, minHeight: 40, alwaysPreserveAspectRatio: true },
-    }),
+    SecretText.configure({ selectableBraille: true }),
+    DocumentImage.configure({ allowBase64: false }),
     Attachment,
     PageBreak,
     Indent,
+    BlockMove,
+    FocusBlock,
     CharacterCount,
     Markdown,
     FileDrop.configure({ onFiles }),
     SlashCommand.configure({ actions }),
+    Search,
+    CommentMark.configure({ onActivate: (threadId) => actions?.onCommentActivate?.(threadId) }),
     Pagination,
   ];
 }

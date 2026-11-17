@@ -5,7 +5,9 @@ import { Icon } from "@iconify/react";
 import { NodeSelection } from "@tiptap/pm/state";
 import { useEditorState } from "@tiptap/react";
 import { BubbleMenu } from "@tiptap/react/menus";
+import { useSecretsRevealed } from "@/hooks/use-secrets-revealed";
 import { activeBlockType, ALIGNMENTS, BLOCK_TYPES, formatShortcut, HIGHLIGHTS, MARKS, TEXT_COLORS } from "@/lib/editor/formatting";
+import { setSecretsRevealed } from "@/lib/editor/secret-text";
 import { isMac } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
@@ -14,8 +16,9 @@ import { cn } from "@/lib/utils";
  * (block type, colour, link) open inside the bubble itself so focus
  * never leaves the editor and the selection stays intact.
  */
-export function BubbleToolbar({ editor }) {
+export function BubbleToolbar({ editor, onComment }) {
   const [panel, setPanel] = useState(null);
+  const revealed = useSecretsRevealed();
   const state = useEditorState({
     editor,
     selector: ({ editor: current }) => ({
@@ -25,6 +28,9 @@ export function BubbleToolbar({ editor }) {
       href: current.getAttributes("link").href ?? "",
       color: current.getAttributes("textStyle").color ?? null,
       highlight: current.getAttributes("textStyle").backgroundColor ?? null,
+      secret: current.isActive("secret"),
+      // Any hidden text inside the selection, even partly.
+      hasSecret: selectionHasSecret(current),
     }),
   });
 
@@ -75,6 +81,27 @@ export function BubbleToolbar({ editor }) {
         <BubbleButton active={panel === "align"} label="Alignment" onClick={() => toggle("align")}>
           <Icon icon={ALIGNMENTS.find((item) => item.id === state.align)?.icon ?? "mdi:format-align-left"} />
         </BubbleButton>
+        <BubbleButton
+          active={state.secret}
+          label={`${state.secret ? "Unhide text" : "Hide text"} (${formatShortcut("Mod Shift H", mac)})`}
+          onClick={() => chain().toggleSecret().run()}
+        >
+          <Icon icon="mdi:form-textbox-password" />
+        </BubbleButton>
+        {state.hasSecret && (
+          <BubbleButton
+            active={revealed}
+            label={revealed ? "Hide hidden text" : "Show hidden text"}
+            onClick={() => setSecretsRevealed(!revealed)}
+          >
+            <Icon icon={revealed ? "mdi:eye-off-outline" : "mdi:eye-outline"} />
+          </BubbleButton>
+        )}
+        {onComment && (
+          <BubbleButton label={`Comment (${formatShortcut("Mod Alt M", mac)})`} onClick={onComment}>
+            <Icon icon="mdi:comment-plus-outline" />
+          </BubbleButton>
+        )}
         <BubbleButton label="Clear formatting" onClick={() => chain().unsetAllMarks().clearNodes().run()}>
           <Icon icon="mdi:format-clear" />
         </BubbleButton>
@@ -155,6 +182,12 @@ export function BubbleToolbar({ editor }) {
       )}
     </BubbleMenu>
   );
+}
+
+function selectionHasSecret(editor) {
+  const { from, to } = editor.state.selection;
+  const type = editor.schema.marks.secret;
+  return Boolean(type) && from !== to && editor.state.doc.rangeHasMark(from, to, type);
 }
 
 function LinkPanel({ href, onApply }) {

@@ -1,5 +1,5 @@
-import { Mark, mergeAttributes } from "@tiptap/core";
-import { Plugin, PluginKey } from "@tiptap/pm/state";
+import { getMarkRange, Mark, mergeAttributes } from "@tiptap/core";
+import { Plugin, PluginKey, TextSelection } from "@tiptap/pm/state";
 import { Decoration, DecorationSet } from "@tiptap/pm/view";
 
 /*
@@ -36,39 +36,94 @@ export function toBraille(text) {
 }
 
 const brailleKey = new PluginKey("secretBraille");
+// Press and hold this long on Braille to peek at that run.
+const PEEK_HOLD_MS = 250;
 
 /*
  * Each hidden run gets two decorations: the real letters are shrunk to
  * nothing (`.secret-src`, still in the document so editing, copy and undo
  * behave normally) and a Braille widget is drawn in front of them
  * (`.secret-braille`). CSS swaps them when "Show hidden text" is on.
+ * The widget is marked `is-selected` while the selection covers its run,
+ * because the shrunken letters can't show the selection themselves.
+ * A run being peeked at (`peek`, a { from, to } range) shows its letters.
  */
-function brailleDecorations(doc, markType) {
+function brailleDecorations(doc, markType, selection, peek) {
   const decorations = [];
   doc.descendants((node, pos) => {
     if (!node.isText || !markType.isInSet(node.marks)) return;
     const end = pos + node.nodeSize;
+    if (peek && peek.from < end && peek.to > pos) {
+      decorations.push(Decoration.inline(pos, end, { class: "secret-peek" }));
+      return;
+    }
     decorations.push(Decoration.inline(pos, end, { class: "secret-src" }));
     const braille = toBraille(node.text);
+    const selected = Boolean(selection) && !selection.empty && selection.from < end && selection.to > pos;
     decorations.push(
       Decoration.widget(
         pos,
         () => {
           const element = document.createElement("span");
-          element.className = "secret-braille";
+          element.className = selected ? "secret-braille is-selected" : "secret-braille";
           element.setAttribute("aria-hidden", "true");
           element.textContent = braille;
+          if (selection !== false) element.title = "Hidden text · click to select, hold to peek";
           return element;
         },
-        { side: -1, ignoreSelection: true, key: `braille:${braille}` },
+        { side: -1, ignoreSelection: true, key: `braille:${braille}:${selected ? 1 : 0}` },
       ),
     );
   });
   return DecorationSet.create(doc, decorations);
 }
 
+/*
+ * Pressing on Braille:
+ *   click            selects its whole hidden run (Shift extends the
+ *                    selection), ready for the selection toolbar
+ *   press and hold   shows just that run until the button is released
+ */
+function pressBraille(view, event, markType) {
+  const widget = event.target instanceof Element ? event.target.closest(".secret-braille") : null;
+  if (!widget || event.button !== 0 || secretsRevealed()) return false;
+  const range = getMarkRange(view.state.doc.resolve(view.posAtDOM(widget, 0)), markType);
+  if (!range) return false;
+  event.preventDefault();
+  const shiftKey = event.shiftKey;
+  let peeking = false;
+
+  const timer = setTimeout(() => {
+    peeking = true;
+    view.dispatch(view.state.tr.setMeta(brailleKey, { peek: range }));
+  }, PEEK_HOLD_MS);
+
+  const release = () => {
+    clearTimeout(timer);
+    window.removeEventListener("pointerup", release);
+    window.removeEventListener("pointercancel", release);
+    if (peeking) {
+      view.dispatch(view.state.tr.setMeta(brailleKey, { peek: null }));
+      return;
+    }
+    const { selection, doc } = view.state;
+    const from = Math.max(0, shiftKey ? Math.min(selection.from, range.from) : range.from);
+    const to = Math.min(doc.content.size, shiftKey ? Math.max(selection.to, range.to) : range.to);
+    view.dispatch(view.state.tr.setSelection(TextSelection.create(doc, from, to)));
+    view.focus();
+  };
+  window.addEventListener("pointerup", release);
+  window.addEventListener("pointercancel", release);
+  return true;
+}
+
 export const SecretText = Mark.create({
   name: "secret",
+
+  addOptions() {
+    // Document notes turn this on: Braille highlights and selects on click.
+    return { selectableBraille: false };
+  },
 
   parseHTML() {
     return [{ tag: "span[data-secret]" }];
@@ -93,16 +148,34 @@ export const SecretText = Mark.create({
 
   addProseMirrorPlugins() {
     const markType = this.type;
+    const selectable = this.options.selectableBraille;
     return [
       new Plugin({
         key: brailleKey,
         state: {
-          init: (_config, state) => brailleDecorations(state.doc, markType),
-          apply: (transaction, previous) =>
-            transaction.docChanged ? brailleDecorations(transaction.doc, markType) : previous,
+          init: (_config, state) => ({
+            peek: null,
+            decorations: brailleDecorations(state.doc, markType, selectable && state.selection, null),
+          }),
+          apply: (transaction, previous) => {
+            const meta = transaction.getMeta(brailleKey);
+            let peek = meta ? meta.peek : previous.peek;
+            if (peek && transaction.docChanged) {
+              peek = { from: transaction.mapping.map(peek.from), to: transaction.mapping.map(peek.to) };
+            }
+            const changed = meta || transaction.docChanged || (selectable && transaction.selectionSet);
+            if (!changed) return previous;
+            return {
+              peek,
+              decorations: brailleDecorations(transaction.doc, markType, selectable && transaction.selection, peek),
+            };
+          },
         },
         props: {
-          decorations: (state) => brailleKey.getState(state),
+          decorations: (state) => brailleKey.getState(state).decorations,
+          handleDOMEvents: {
+            mousedown: (view, event) => selectable && pressBraille(view, event, markType),
+          },
         },
       }),
     ];

@@ -132,6 +132,7 @@ export function NoteEditor({ note }) {
       <NoteToolbar
         actions={actions}
         autosave={autosave}
+        doc={doc}
         kind={kind}
         note={note}
         onAutosaveChange={setAutosave}
@@ -143,7 +144,7 @@ export function NoteEditor({ note }) {
       />
 
       {(trashed || note.archived_at || !trashed) && (
-        <div className="flex min-h-10 shrink-0 flex-wrap items-center gap-x-3 gap-y-1 border-b px-3 py-1 md:px-4">
+        <div className="flex min-h-10 shrink-0 flex-wrap items-center gap-x-3 gap-y-1 border-b px-3 py-1 md:px-4" data-focus-hide="">
           {trashed ? (
             <StatusLine icon="mdi:delete-outline" text="In Trash">
               <Button onClick={() => restoreNote(note)} size="xs" variant="outline">

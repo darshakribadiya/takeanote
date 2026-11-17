@@ -2,7 +2,7 @@
 
 import "@xyflow/react/dist/style.css";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
 import { Icon } from "@iconify/react";
 import {
   applyEdgeChanges,
@@ -21,17 +21,24 @@ import {
 import * as Y from "yjs";
 import { Menu, MenuItem, MenuPopup, MenuSeparator, MenuShortcut, MenuTrigger } from "@/components/ui/menu";
 import { Popover, PopoverPopup, PopoverTrigger } from "@/components/ui/popover";
-import { useHotkeys } from "@/hooks/use-hotkeys";
+import { useFocusMode } from "@/hooks/use-focus-mode";
+import { isTypingTarget, useHotkeys } from "@/hooks/use-hotkeys";
+import { toggleFocusMode } from "@/lib/focus-mode";
+import { clipboardFlavours, fillText, lastCopiedPayload, pasteItems, readPayload, serializeItems } from "@/lib/editor/canvas-clipboard";
+import { boundsOf, snapToGuides } from "@/lib/editor/canvas-guides";
 import {
   addEdge,
+  addNeighbour,
   addNode,
   alignNodes,
   duplicateNodes,
   edgesMap,
   GRID,
   groupNodes,
+  isEmptyTextBox,
   LOCAL,
   memberPatches,
+  membersOf,
   NODE_DEFAULTS,
   nodesMap,
   patchNodes,
@@ -50,16 +57,21 @@ import { cn } from "@/lib/utils";
 import { usePointerMenu } from "../pointer-menu";
 import { ALIGN_ACTIONS, CanvasContextMenu } from "./canvas-context-menu";
 import { CanvasLayers } from "./canvas-layers";
+import { CanvasFindBar, GuideLines, searchMarks, useBoardSearch } from "./canvas-find";
 import { CanvasContext, NODE_TYPES } from "./canvas-nodes";
 import { EdgeStylePanel, NodeStylePanel } from "./canvas-style-panel";
 
 const PREFS_KEY = "qn:canvas-prefs";
+const DEFAULT_PREFS = { snap: true, guides: true, minimap: false, layers: false };
+// How close (in screen pixels) an edge or centre must come to snap to a guide.
+const GUIDE_THRESHOLD_PX = 6;
+const IMAGE_URL = /^https?:\/\/\S+\.(png|jpe?g|gif|webp|avif|svg)(\?\S*)?$/i;
 
 function readPrefs() {
   try {
-    return { snap: true, minimap: false, layers: false, ...JSON.parse(localStorage.getItem(PREFS_KEY) ?? "{}") };
+    return { ...DEFAULT_PREFS, ...JSON.parse(localStorage.getItem(PREFS_KEY) ?? "{}") };
   } catch {
-    return { snap: true, minimap: false, layers: false };
+    return DEFAULT_PREFS;
   }
 }
 
@@ -94,8 +106,18 @@ function CanvasBoard({ noteId, doc, readOnly, ensurePersisted, onError }) {
   const [nodes, setNodes] = useState([]);
   const [edges, setEdges] = useState([]);
   const [editingId, setEditingId] = useState(null);
+  const [renamingId, setRenamingId] = useState(null);
+  const nodeMenuRef = useRef(null);
   const [prefs, setPrefs] = useState(readPrefs);
   const [initialViewport] = useState(() => readViewport(noteId));
+  const [guides, setGuides] = useState([]);
+  const guidesShown = useRef(false);
+  const guidesOff = useRef(false);
+  const pointer = useRef(null);
+  const lastPaste = useRef({ key: null, count: 0 });
+  const quickAddRef = useRef(null);
+  const [find, setFind] = useState({ open: false, key: 0 });
+  const search = useBoardSearch(doc, find.open);
 
   // ---- Yjs -> React Flow ----------------------------------------------------
 
@@ -139,9 +161,78 @@ function CanvasBoard({ noteId, doc, readOnly, ensurePersisted, onError }) {
 
   const undoManager = useCanvasUndo(doc);
 
+  /*
+   * Text boxes only exist once they have text. A box left empty when
+   * editing ends is removed (with its arrows). If it was just created and
+   * nothing else happened since, its "created" undo step goes too, so
+   * undo never brings back an empty box.
+   * `freshBoxes`: id -> the undo step that created it.
+   */
+  const freshBoxes = useRef(new Map());
+  const previousEditing = useRef(null);
+
+  function noteFresh(id) {
+    const value = nodesMap(doc).get(id);
+    if (value?.type === "text") freshBoxes.current.set(id, undoManager.lastStep());
+  }
+
+  const tidyEmptyBox = useEffectEvent((id) => {
+    const step = freshBoxes.current.get(id);
+    freshBoxes.current.delete(id);
+    if (readOnly || !isEmptyTextBox(doc, id)) return;
+    const dropped = step && undoManager.dropLastStep(step);
+    removeElements(doc, { nodeIds: [id] }, { track: !dropped });
+  });
+
+  useEffect(() => {
+    const previous = previousEditing.current;
+    previousEditing.current = editingId;
+    if (previous && previous !== editingId) tidyEmptyBox(previous);
+  }, [editingId]);
+
   // ---- React Flow -> Yjs ----------------------------------------------------
 
-  function handleNodesChange(changes) {
+  /*
+   * While dragging, nudge the moving items onto nearby edges and centres
+   * and show guide lines (Alt while dragging turns this off). The drop
+   * gets the same nudge, so the items stay where the guides showed them.
+   */
+  function applyGuides(changes) {
+    const moves = changes.filter((change) => change.type === "position" && change.position && change.dragging !== undefined);
+    if (!moves.length) return changes;
+    const dragging = moves.some((change) => change.dragging);
+    if (!prefs.guides || guidesOff.current || (!dragging && !guidesShown.current)) {
+      if (guidesShown.current) {
+        guidesShown.current = false;
+        setGuides([]);
+      }
+      return changes;
+    }
+    const map = nodesMap(doc);
+    const byId = new Map(nodes.map((node) => [node.id, node]));
+    const exclude = new Set(moves.map((change) => change.id));
+    for (const change of moves) {
+      if (map.get(change.id)?.type === "frame") membersOf(doc, change.id).forEach((member) => exclude.add(member));
+    }
+    const size = (node) => ({ w: node?.measured?.width ?? node?.width ?? 0, h: node?.measured?.height ?? node?.height ?? 0 });
+    const moving = boundsOf(moves.map((change) => ({ ...change.position, ...size(byId.get(change.id)) })));
+    const others = nodes
+      .filter((node) => !exclude.has(node.id) && !node.hidden)
+      .map((node) => ({ ...node.position, ...size(node) }));
+    const result = snapToGuides(moving, others, GUIDE_THRESHOLD_PX / flow.getZoom());
+    guidesShown.current = dragging && result.guides.length > 0;
+    setGuides(dragging ? result.guides : []);
+    if (!result.dx && !result.dy) return changes;
+    const ids = new Set(moves.map((change) => change.id));
+    return changes.map((change) =>
+      ids.has(change.id) && change.type === "position" && change.position
+        ? { ...change, position: { x: change.position.x + result.dx, y: change.position.y + result.dy } }
+        : change,
+    );
+  }
+
+  function handleNodesChange(rawChanges) {
+    const changes = readOnly ? rawChanges : applyGuides(rawChanges);
     setNodes((current) => applyNodeChanges(changes, current));
     if (readOnly) return;
     const patches = {};
@@ -190,7 +281,10 @@ function CanvasBoard({ noteId, doc, readOnly, ensurePersisted, onError }) {
 
   function create(type, position = centerOfView(type), extra = {}) {
     if (readOnly) return null;
+    // Its own undo step, so an untouched text box can take it away again.
+    undoManager.stopCapturing();
     const id = addNode(doc, type, { ...snapPoint(position, prefs.snap), ...extra });
+    noteFresh(id);
     setNodes((current) => current.map((node) => ({ ...node, selected: node.id === id })));
     if (type === "text" || type === "sticky" || type === "shape") setEditingId(id);
     return id;
@@ -262,6 +356,172 @@ function CanvasBoard({ noteId, doc, readOnly, ensurePersisted, onError }) {
     patchNodes(doc, selectedIds, { locked: lock });
   }
 
+  // ---- copy & paste -----------------------------------------------------------
+
+  // Where pasted items go: under the pointer when it's over the board.
+  function pastePoint() {
+    return pointer.current ? flow.screenToFlowPosition(pointer.current) : null;
+  }
+
+  function copyPayload() {
+    const payload = selectedIds.length ? serializeItems(doc, selectedIds) : null;
+    return payload ? clipboardFlavours(doc, payload) : null;
+  }
+
+  // Menu copy: the async clipboard API (keyboard copy uses the copy event below).
+  async function copySelection() {
+    const flavours = copyPayload();
+    if (!flavours) return;
+    try {
+      await navigator.clipboard.write([
+        new ClipboardItem({
+          "text/html": new Blob([flavours.html], { type: "text/html" }),
+          "text/plain": new Blob([flavours.text], { type: "text/plain" }),
+        }),
+      ]);
+    } catch {
+      // Same-tab paste still works from the in-memory copy.
+    }
+  }
+
+  async function cutSelection() {
+    await copySelection();
+    deleteSelection();
+  }
+
+  async function pasteAt(point) {
+    let payload = null;
+    let text = "";
+    try {
+      for (const item of await navigator.clipboard.read()) {
+        if (item.types.includes("text/html")) payload = readPayload(await (await item.getType("text/html")).text());
+        if (!payload && item.types.includes("text/plain")) text = await (await item.getType("text/plain")).text();
+      }
+    } catch {
+      payload = lastCopiedPayload();
+    }
+    pasteContent({ payload, text, files: [] }, point ?? pastePoint());
+  }
+
+  /*
+   * Board items paste as copies; files upload; an image link becomes an
+   * image; other text becomes a text box.
+   */
+  function pasteContent({ payload, text, files }, point) {
+    if (readOnly) return false;
+    if (files.length) {
+      addFiles(files, point ?? centerOfView("image"));
+      return true;
+    }
+    if (payload) {
+      let at = point;
+      if (!at) {
+        // Pasting again without moving the pointer steps each copy further down.
+        const key = payload.nodes.map((item) => item.id).join();
+        const count = lastPaste.current.key === key ? lastPaste.current.count + 1 : 1;
+        lastPaste.current = { key, count };
+        const left = Math.min(...payload.nodes.map((item) => item.value.x));
+        const top = Math.min(...payload.nodes.map((item) => item.value.y));
+        at = { x: left + GRID * 2 * count, y: top + GRID * 2 * count };
+      }
+      const ids = pasteItems(doc, payload, { at, snap: prefs.snap });
+      regroupByPosition(doc, ids);
+      select(ids);
+      return true;
+    }
+    const trimmed = text.trim();
+    if (!trimmed) return false;
+    const at = snapPoint(point ?? centerOfView("text"), prefs.snap);
+    if (IMAGE_URL.test(trimmed)) {
+      const name = decodeURIComponent(new URL(trimmed).pathname.split("/").pop() || "Image");
+      select([addNode(doc, "image", { ...at, src: trimmed, name })]);
+      return true;
+    }
+    const lines = trimmed.split(/\r?\n/);
+    const longest = Math.max(...lines.map((line) => line.length));
+    const id = addNode(doc, "text", {
+      ...at,
+      w: Math.min(480, Math.max(NODE_DEFAULTS.text.w, longest * 8 + 32)),
+      h: Math.max(NODE_DEFAULTS.text.h, lines.length * 24 + 16),
+    });
+    fillText(doc, id, trimmed);
+    select([id]);
+    return true;
+  }
+
+  // Keyboard copy / cut / paste, unless someone is typing or selected page text.
+  const onClipboard = useEffectEvent((event) => {
+    if (isTypingTarget(event.target) || isTypingTarget(document.activeElement) || editingId) return;
+    if (event.type !== "paste" && !window.getSelection()?.isCollapsed) return;
+    if (event.type === "paste") {
+      const data = event.clipboardData;
+      const handled = pasteContent(
+        { payload: readPayload(data?.getData("text/html")), text: data?.getData("text/plain") ?? "", files: [...(data?.files ?? [])] },
+        pastePoint(),
+      );
+      if (handled) event.preventDefault();
+      return;
+    }
+    const flavours = copyPayload();
+    if (!flavours) return;
+    event.clipboardData.setData("text/html", flavours.html);
+    event.clipboardData.setData("text/plain", flavours.text);
+    event.preventDefault();
+    if (event.type === "cut" && !readOnly) deleteSelection();
+  });
+
+  useEffect(() => {
+    const listener = (event) => onClipboard(event);
+    const types = ["copy", "cut", "paste"];
+    types.forEach((type) => document.addEventListener(type, listener));
+    return () => types.forEach((type) => document.removeEventListener(type, listener));
+  }, []);
+
+  // ---- quick connect -------------------------------------------------------------
+
+  function quickAdd(sourceId, side) {
+    if (readOnly) return;
+    undoManager.stopCapturing();
+    const id = addNeighbour(doc, sourceId, side);
+    if (!id) return;
+    regroupByPosition(doc, [id]);
+    noteFresh(id);
+    select([id]);
+    const type = nodesMap(doc).get(id)?.type;
+    if (type === "text" || type === "sticky" || type === "shape") setEditingId(id);
+  }
+
+  useEffect(() => {
+    quickAddRef.current = quickAdd;
+  });
+
+  // ---- find --------------------------------------------------------------------
+
+  function closeFind(result) {
+    setFind((current) => ({ ...current, open: false }));
+    if (result?.kind === "node") select([result.id]);
+  }
+
+  const { results: searchResults, current: searchCurrent } = search;
+  const marks = useMemo(
+    () => searchMarks({ results: searchResults, current: searchCurrent }),
+    [searchResults, searchCurrent],
+  );
+  const flowNodes = useMemo(
+    () =>
+      marks.nodes.size
+        ? nodes.map((node) =>
+            marks.nodes.has(node.id) ? { ...node, className: cn("canvas-search-hit", marks.nodes.get(node.id) && "is-current") } : node,
+          )
+        : nodes,
+    [nodes, marks],
+  );
+  const flowEdges = marks.edges.size
+    ? edges.map((edge) =>
+        marks.edges.has(edge.id) ? { ...edge, className: cn("canvas-search-hit", marks.edges.get(edge.id) && "is-current") } : edge,
+      )
+    : edges;
+
   // Layers panel: select an item and bring it into view if it is off screen.
   function revealNode(id, { add } = {}) {
     const value = nodesMap(doc).get(id);
@@ -288,6 +548,7 @@ function CanvasBoard({ noteId, doc, readOnly, ensurePersisted, onError }) {
     { combo: "mod+shift+}", handler: () => !readOnly && reorder(doc, selectedIds, "front") },
     { combo: "mod+shift+{", handler: () => !readOnly && reorder(doc, selectedIds, "back") },
     { combo: "mod+shift+l", handler: () => !readOnly && selectedIds.length && toggleLock() },
+    { combo: "mod+f", allowInInputs: true, handler: () => setFind((current) => ({ open: true, key: current.key + 1 })) },
     { combo: "t", handler: () => create("text") },
     { combo: "s", handler: () => create("sticky") },
     { combo: "g", handler: () => create("frame") },
@@ -305,6 +566,15 @@ function CanvasBoard({ noteId, doc, readOnly, ensurePersisted, onError }) {
   // ---- right-click menu --------------------------------------------------------
 
   const contextMenu = usePointerMenu();
+
+  // A node's "⋯" button (groups): select it, then its menu opens at the button.
+  useEffect(() => {
+    nodeMenuRef.current = (event, id) => {
+      setEditingId(null);
+      if (!nodes.find((node) => node.id === id)?.selected) select([id]);
+      contextMenu.openAt(event, { kind: "nodes" });
+    };
+  });
 
   // Shift + right-click, or right-clicking text being typed, keeps the browser menu.
   function openContextMenu(event, target) {
@@ -325,6 +595,7 @@ function CanvasBoard({ noteId, doc, readOnly, ensurePersisted, onError }) {
     addShape,
     pickFiles: (point) => pickFiles(point),
     editNode: (id) => setEditingId(id),
+    renameGroup: (id) => setRenamingId(id),
     getEditor: (id) => editors.get(id) ?? null,
     nodeById: (id) => nodes.find((node) => node.id === id) ?? null,
     onError,
@@ -333,6 +604,9 @@ function CanvasBoard({ noteId, doc, readOnly, ensurePersisted, onError }) {
     resetZoom: () => flow.zoomTo(1, { duration: 150 }),
     deleteSelection,
     duplicateSelection,
+    copySelection,
+    cutSelection,
+    pasteAt,
     groupSelection,
     ungroupSelection,
     toggleLock,
@@ -367,8 +641,13 @@ function CanvasBoard({ noteId, doc, readOnly, ensurePersisted, onError }) {
         editors.set(id, editor);
         return () => editors.get(id) === editor && editors.delete(id);
       },
+      quickAdd: (id, side) => quickAddRef.current?.(id, side),
+      renamingId,
+      setRenamingId,
+      // A node's own "⋯" button: select it and open its right-click menu there.
+      openNodeMenu: (event, id) => nodeMenuRef.current?.(event, id),
     }),
-    [doc, editingId, readOnly, editors],
+    [doc, editingId, readOnly, editors, renamingId],
   );
 
   return (
@@ -385,6 +664,12 @@ function CanvasBoard({ noteId, doc, readOnly, ensurePersisted, onError }) {
         onDragOver={(event) => {
           if (!readOnly && event.dataTransfer.types.includes("Files")) event.preventDefault();
         }}
+        onPointerLeave={() => {
+          pointer.current = null;
+        }}
+        onPointerMove={(event) => {
+          pointer.current = { x: event.clientX, y: event.clientY };
+        }}
         onDrop={(event) => {
           const files = [...(event.dataTransfer?.files ?? [])];
           if (readOnly || !files.length) return;
@@ -397,16 +682,19 @@ function CanvasBoard({ noteId, doc, readOnly, ensurePersisted, onError }) {
           connectionMode={ConnectionMode.Loose}
           defaultViewport={initialViewport ?? undefined}
           deleteKeyCode={readOnly ? null : ["Backspace", "Delete"]}
-          edges={edges}
+          edges={flowEdges}
           edgesFocusable={!readOnly}
           elementsSelectable
+          // Stacking comes from Arrange / Layers only. React Flow would otherwise lift a
+          // selected item to the top, so "Send backward" looked like it did nothing.
+          elevateNodesOnSelect={false}
           fitView={!initialViewport}
           fitViewOptions={{ maxZoom: 1, padding: 0.2 }}
           maxZoom={4}
           minZoom={0.1}
           multiSelectionKeyCode={["Shift", "Meta", "Control"]}
           nodeTypes={NODE_TYPES}
-          nodes={nodes}
+          nodes={flowNodes}
           nodesConnectable={!readOnly}
           nodesDraggable={!readOnly}
           onConnect={(connection) => addEdge(doc, connection)}
@@ -443,11 +731,17 @@ function CanvasBoard({ noteId, doc, readOnly, ensurePersisted, onError }) {
           onNodeClick={(_event, node) => {
             if (node.id !== editingId) setEditingId(null);
           }}
-          onNodeDragStart={(_event, node) => {
+          onNodeDrag={(event) => {
+            guidesOff.current = event.altKey;
+          }}
+          onNodeDragStart={(event, node) => {
+            guidesOff.current = event.altKey;
             if (node.id !== editingId) setEditingId(null);
           }}
           // Dropping a box into or out of a group updates its membership.
           onNodeDragStop={(_event, _node, dragged) => {
+            guidesShown.current = false;
+            setGuides([]);
             if (!readOnly) regroupByPosition(doc, dragged.map((item) => item.id));
           }}
           onNodesChange={handleNodesChange}
@@ -462,6 +756,7 @@ function CanvasBoard({ noteId, doc, readOnly, ensurePersisted, onError }) {
           zoomOnDoubleClick={false}
         >
           <Background gap={GRID * 2} size={1.5} variant={BackgroundVariant.Dots} />
+          <GuideLines guides={guides} />
           {/* The layers panel (w-64 at right-3) takes the bottom-right corner; sit beside it. */}
           {prefs.minimap && (
             <MiniMap className="max-md:hidden!" pannable style={prefs.layers ? { right: "17rem" } : undefined} zoomable />
@@ -494,6 +789,12 @@ function CanvasBoard({ noteId, doc, readOnly, ensurePersisted, onError }) {
           </div>
         )}
 
+        {find.open && (
+          <div className="absolute top-3 right-3 z-20">
+            <CanvasFindBar doc={doc} focusKey={find.key} onClose={closeFind} search={search} />
+          </div>
+        )}
+
         {prefs.layers && (
           <CanvasLayers
             doc={doc}
@@ -517,7 +818,9 @@ function CanvasBoard({ noteId, doc, readOnly, ensurePersisted, onError }) {
           canRedo={undoManager.canRedo()}
           canUndo={undoManager.canUndo()}
           empty={!nodes.length}
+          findOpen={find.open}
           onAdd={create}
+          onFind={() => (find.open ? closeFind() : setFind((current) => ({ open: true, key: current.key + 1 })))}
           onAddShape={addShape}
           onPickFiles={() => pickFiles()}
           onRedo={() => undoManager.redo()}
@@ -556,6 +859,16 @@ function useCanvasUndo(doc) {
     redo: () => manager.redo(),
     canUndo: () => manager.canUndo(),
     canRedo: () => manager.canRedo(),
+    // Start a new undo step with the next change (don't merge into the last one).
+    stopCapturing: () => manager.stopCapturing(),
+    lastStep: () => manager.undoStack.at(-1) ?? null,
+    // Forget `step` if it is still the latest; true when it was dropped.
+    dropLastStep: (step) => {
+      if (manager.undoStack.at(-1) !== step) return false;
+      manager.undoStack.pop();
+      setVersion((value) => value + 1);
+      return true;
+    },
   };
 }
 
@@ -590,9 +903,10 @@ const TOOLS = [
   { type: "frame", label: "Group", icon: "mdi:group", key: "G" },
 ];
 
-function CanvasToolbar({ onAdd, onAddShape, onPickFiles, onUndo, onRedo, canUndo, canRedo, prefs, setPref, readOnly, empty }) {
+function CanvasToolbar({ onAdd, onAddShape, onPickFiles, onUndo, onRedo, canUndo, canRedo, prefs, setPref, readOnly, empty, findOpen, onFind }) {
   const flow = useReactFlow();
   const { zoom } = useViewport();
+  const focus = useFocusMode();
 
   return (
     <>
@@ -665,11 +979,30 @@ function CanvasToolbar({ onAdd, onAddShape, onPickFiles, onUndo, onRedo, canUndo
           <ToolButton active={prefs.snap} label="Snap to grid" onClick={() => setPref("snap", !prefs.snap)}>
             <Icon icon="mdi:grid" />
           </ToolButton>
+          <ToolButton
+            active={prefs.guides}
+            className="max-md:hidden"
+            label="Alignment guides (hold Alt while dragging to skip)"
+            onClick={() => setPref("guides", !prefs.guides)}
+          >
+            <Icon icon="mdi:ruler-square" />
+          </ToolButton>
+          <ToolButton active={findOpen} label={`Find on board (${isMac() ? "⌘" : "Ctrl+"}F)`} onClick={onFind}>
+            <Icon icon="mdi:magnify" />
+          </ToolButton>
           <ToolButton active={prefs.minimap} className="max-md:hidden" label="Mini map" onClick={() => setPref("minimap", !prefs.minimap)}>
             <Icon icon="mdi:map-outline" />
           </ToolButton>
           <ToolButton active={prefs.layers} label="Layers" onClick={() => setPref("layers", !prefs.layers)}>
             <Icon icon="mdi:layers-outline" />
+          </ToolButton>
+          <Divider />
+          <ToolButton
+            active={focus.active}
+            label={`${focus.active ? "Exit focus mode" : "Focus mode"} (${isMac() ? "⌘" : "Ctrl+"}Shift+F)`}
+            onClick={toggleFocusMode}
+          >
+            <Icon icon={focus.active ? "mdi:fullscreen-exit" : "mdi:fullscreen"} />
           </ToolButton>
         </div>
       </div>

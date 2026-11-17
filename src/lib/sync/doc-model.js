@@ -11,12 +11,16 @@ import { toBraille } from "@/lib/editor/secret-text";
  *   nodes     Y.Map          canvas nodes:  id -> { type, position, … }
  *   edges     Y.Map          canvas edges:  id -> { source, target, … }
  *   node:<id> Y.XmlFragment  rich text inside one canvas node
+ *   threads   Y.Map          document comment threads (lib/editor/comments.js)
+ *   comments  Y.Array        messages in those threads
  */
 export const TITLE = "title";
 export const BODY = "body";
 export const SETTINGS = "settings";
 export const NODES = "nodes";
 export const EDGES = "edges";
+export const THREADS = "threads";
+export const COMMENTS = "comments";
 
 // Key in `settings`: false = save only on Ctrl+S / Save; missing or true = autosave.
 export const AUTOSAVE = "autosave";
@@ -28,12 +32,14 @@ export function nodeField(nodeId) {
 // Prosemirror nodes that render inline; everything else is a block.
 const INLINE_NODES = new Set(["hardBreak", "image", "attachment"]);
 
-function xmlText(node) {
+function xmlText(node, reveal = false) {
   if (node instanceof Y.XmlText) {
     // Hidden text (the "secret" mark) stays out of previews and the search index.
     return node
       .toDelta()
-      .map((part) => (typeof part.insert !== "string" ? "" : part.attributes?.secret ? toBraille(part.insert) : part.insert))
+      .map((part) =>
+        typeof part.insert !== "string" ? "" : part.attributes?.secret && !reveal ? toBraille(part.insert) : part.insert,
+      )
       .join("");
   }
   if (node instanceof Y.XmlElement) {
@@ -41,15 +47,16 @@ function xmlText(node) {
     if (INLINE_NODES.has(node.nodeName)) return "";
     const children = node.toArray();
     const hasBlocks = children.some((child) => child instanceof Y.XmlElement && !INLINE_NODES.has(child.nodeName));
-    return children.map(xmlText).join(hasBlocks ? "\n" : "");
+    return children.map((child) => xmlText(child, reveal)).join(hasBlocks ? "\n" : "");
   }
   return "";
 }
 
-export function fragmentText(fragment) {
+// `reveal` keeps hidden text readable (only for a viewer who chose to show it).
+export function fragmentText(fragment, { reveal = false } = {}) {
   return fragment
     .toArray()
-    .map(xmlText)
+    .map((node) => xmlText(node, reveal))
     .filter((text) => text.length)
     .join("\n");
 }

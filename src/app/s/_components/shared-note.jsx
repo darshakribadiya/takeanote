@@ -4,7 +4,7 @@ import { use, useEffect, useState } from "react";
 import { browser } from "react-dom";
 import Link from "next/link";
 import { Icon } from "@iconify/react";
-import { NoteBody } from "@/components/editor/note-body";
+import { CanvasHeaderTitle, NoteBody } from "@/components/editor/note-body";
 import { AuthForm } from "@/components/auth-form";
 import { LogoMark } from "@/components/logo";
 import { NameDialog } from "@/components/name-dialog";
@@ -21,6 +21,7 @@ import { APP_NAME } from "@/constants";
 import { useAutosave } from "@/hooks/use-autosave";
 import { useHotkeys } from "@/hooks/use-hotkeys";
 import { useNoteSync } from "@/hooks/use-note-sync";
+import { setFocusMode } from "@/lib/focus-mode";
 import { createClient } from "@/lib/supabase/client";
 import { ensureSession, joinShare, openInvitedNote } from "@/lib/notes/api";
 import { plainText, TITLE } from "@/lib/sync/doc-model";
@@ -156,11 +157,14 @@ function SharedEditor({ share, user: initialUser }) {
 
   return (
     <div className="flex h-dvh flex-col">
-      <header className="z-10 flex h-14 shrink-0 items-center gap-3 border-b bg-background/80 px-4 backdrop-blur">
+      <header className="z-10 flex h-14 shrink-0 items-center gap-3 border-b bg-background/80 px-4 backdrop-blur" data-focus-hide="">
         <Link aria-label={`${APP_NAME} home`} className="inline-flex items-center gap-2 font-heading font-semibold" href="/">
           <LogoMark />
           <span className="max-sm:hidden">{APP_NAME}</span>
         </Link>
+        {kind === "canvas" && (
+          <CanvasHeaderTitle className="max-w-[30vw] md:max-w-xs" doc={doc} readOnly={readMode || !canEdit} />
+        )}
         <Badge variant={canEdit ? "info" : "secondary"}>
           <Icon icon={canEdit ? "mdi:pencil-outline" : "mdi:eye-outline"} />
           {canEdit ? "Can edit" : "View only"}
@@ -175,6 +179,9 @@ function SharedEditor({ share, user: initialUser }) {
               <Icon icon={readMode ? "mdi:eye-outline" : "mdi:pencil-outline"} />
             </Toggle>
           )}
+          <Button aria-label="Focus mode" onClick={() => setFocusMode(true)} size="icon-sm" title="Focus mode (Ctrl+Shift+F)" variant="ghost">
+            <Icon icon="mdi:fullscreen" />
+          </Button>
           <Button onClick={copyText} size="sm" variant="ghost">
             <Icon icon="mdi:content-copy" />
             <span className="max-sm:hidden">Copy</span>
