@@ -16,7 +16,7 @@ export function ScrollArea(
 ) {
   return (
     <ScrollAreaPrimitive.Root
-      className={cn("size-full min-h-0", className)}
+      className={cn("min-h-0", className)}
       {...props}
     >
       <ScrollAreaPrimitive.Viewport

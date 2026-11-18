@@ -19,7 +19,7 @@ import {
 const COPY = {
   signin: {
     title: `Welcome to ${APP_NAME}`,
-    text: `Sign in with your email and password. You stay signed in for ${SESSION_DAYS} days.`,
+    text: `Sign in with your email and password.`,
     action: "Sign in",
   },
   share: {
@@ -121,7 +121,7 @@ export function AuthForm({ mode = "signin", onSignedIn }) {
             autoFocus
             maxLength={MAX_NAME_LENGTH}
             onChange={(event) => setFullName(event.target.value)}
-            placeholder="Ada Lovelace"
+            placeholder="John Doe"
             required
             value={fullName}
           />

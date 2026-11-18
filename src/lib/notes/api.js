@@ -76,7 +76,7 @@ export async function signInWithPassword(rawEmail, password) {
 
 export const MAX_NAME_LENGTH = 80;
 
-// Collapses spaces. Example: "  Ada   Lovelace " -> "Ada Lovelace"
+// Collapses spaces. Example: "  John   Doe " -> "John Doe"
 export function normalizeName(name) {
   return (name ?? "").trim().replace(/\s+/g, " ").slice(0, MAX_NAME_LENGTH);
 }

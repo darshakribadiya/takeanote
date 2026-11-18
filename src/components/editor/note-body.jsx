@@ -91,7 +91,7 @@ function CanvasTitlePrompt({ doc, autoFocus, fallback, readOnly }) {
           onExit={() => document.activeElement?.blur()}
           onFocus={() => setFocused(true)}
         />
-        {focused && <p className="pb-0.5 text-xs text-muted-foreground">Enter to save · it moves to the top bar</p>}
+        {focused && <p className="pb-0.5 text-xs text-muted-foreground">Enter to save</p>}
       </div>
     </div>
   );

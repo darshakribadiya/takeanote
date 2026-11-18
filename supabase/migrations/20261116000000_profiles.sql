@@ -20,7 +20,7 @@ alter table public.profiles enable row level security;
 create policy "self read" on public.profiles for select to authenticated
   using (id = (select auth.uid()));
 
--- Example: raw_user_meta_data {"full_name": "  Ada Lovelace "} -> 'Ada Lovelace'
+-- Example: raw_user_meta_data {"full_name": "  John Doe "} -> 'John Doe'
 create or replace function public.sync_profile_from_auth()
 returns trigger
 language plpgsql
@@ -53,7 +53,7 @@ on conflict (id) do nothing;
 -- People on a note: the owner, plus (for the owner only) everyone who
 -- joined through a link that still works. Emails are shown to the owner
 -- only; members just see the owner's name.
--- Example row: (user_id, 'Ada Lovelace', 'ada@example.com', 'edit', '2026-11-16 10:00')
+-- Example row: (user_id, 'John Doe', 'john@example.com', 'edit', '2026-11-16 10:00')
 -- ---------------------------------------------------------------------------
 
 create or replace function public.note_people(p_note uuid)

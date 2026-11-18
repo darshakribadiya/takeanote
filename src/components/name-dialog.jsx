@@ -39,10 +39,10 @@ export function NameDialog({ open, onOpenChange, initialName = "", intro, onSave
           <DialogHeader>
             <DialogTitle>Your name</DialogTitle>
             <DialogDescription>
-              {intro ?? "Shown to people you share notes with, next to your cursor and in the people list."}
+              {intro ?? "Shown to people you share notes with."}
             </DialogDescription>
           </DialogHeader>
-          <DialogPanel>
+          <DialogPanel scrollFade={false}>
             <Field>
               <FieldLabel>Full name</FieldLabel>
               <Input
@@ -50,7 +50,7 @@ export function NameDialog({ open, onOpenChange, initialName = "", intro, onSave
                 autoFocus
                 maxLength={MAX_NAME_LENGTH}
                 onChange={(event) => setName(event.target.value)}
-                placeholder="Ada Lovelace"
+                placeholder="John Doe"
                 required
                 value={name}
               />

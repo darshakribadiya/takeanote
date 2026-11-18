@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 /*
  * Other people in the note right now, from the Yjs awareness channel.
  * One entry per person even when they have it open in several tabs.
- * Example: [{ id: "uuid", name: "Ada Lovelace", color: "#6366f1" }]
+ * Example: [{ id: "uuid", name: "John Doe", color: "#6366f1" }]
  */
 export function usePresence(awareness) {
   const [people, setPeople] = useState(() => readPeople(awareness));

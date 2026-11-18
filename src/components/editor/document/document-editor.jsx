@@ -17,6 +17,7 @@ import { CommentsPanel } from "./comments-panel";
 import { useDocumentContextMenu } from "./document-context-menu";
 import { documentExtensions } from "./document-extensions";
 import { FindBar } from "./find-bar";
+import { MobileBlockInsert } from "./mobile-block-insert";
 import { MobileToolbar } from "./mobile-toolbar";
 import { OutlinePanel } from "./outline-panel";
 import { PaperControls, ZOOM_STEPS } from "./paper-controls";
@@ -361,6 +362,7 @@ export function DocumentEditor({
           <BubbleToolbar editor={editor} onComment={startComment} />
           <TableMenu editor={editor} />
           {!isPhone && <BlockHandle editor={editor} />}
+          {isPhone && <MobileBlockInsert editor={editor} />}
           {isPhone && <MobileToolbar editor={editor} onPickFile={pickFile} />}
         </>
       )}

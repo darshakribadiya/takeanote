@@ -1,6 +1,6 @@
 import { cn } from "@/lib/utils";
 
-// Example: "Ada Lovelace" -> "AL", "ada@example.com" -> "A"
+// Example: "John Doe" -> "JD", "john@example.com" -> "J"
 export function initials(name = "") {
   const words = name.includes("@") ? [name] : name.trim().split(/\s+/).filter(Boolean);
   return (words.length > 1 ? words[0][0] + words.at(-1)[0] : (words[0]?.[0] ?? "?")).toUpperCase();
